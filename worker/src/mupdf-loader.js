@@ -1,32 +1,28 @@
-import mupdfWasm from '../../node_modules/mupdf/dist/mupdf-wasm.wasm';
-
 let mupdfPromise = null;
 
-export function loadMupdf() {
+export function loadMupdf(env) {
   if (!mupdfPromise) {
-    globalThis.$libmupdf_wasm_Module = createModuleOptions(mupdfWasm);
-    mupdfPromise = import('mupdf').then((module) => {
-      delete globalThis.$libmupdf_wasm_Module;
-      return module.default || module;
-    }).catch((error) => {
+    mupdfPromise = initializeMupdf(env).catch((error) => {
       mupdfPromise = null;
-      delete globalThis.$libmupdf_wasm_Module;
       throw error;
     });
   }
   return mupdfPromise;
 }
 
-function createModuleOptions(wasm) {
-  if (typeof WebAssembly !== 'undefined' && wasm instanceof WebAssembly.Module) {
-    return {
-      instantiateWasm(imports, successCallback) {
-        const instance = new WebAssembly.Instance(wasm, imports);
-        successCallback(instance, wasm);
-        return instance.exports;
-      }
-    };
+async function initializeMupdf(env) {
+  if (!env?.ASSETS) throw new Error('The ASSETS binding is required to load MuPDF.');
+
+  const response = await env.ASSETS.fetch('https://assets.local/vendor/mupdf-wasm.wasm');
+  if (!response.ok) throw new Error(`MuPDF WASM asset could not be loaded (${response.status}).`);
+
+  const wasmBinary = new Uint8Array(await response.arrayBuffer());
+  globalThis.$libmupdf_wasm_Module = { wasmBinary };
+
+  try {
+    const module = await import('mupdf');
+    return module.default || module;
+  } finally {
+    delete globalThis.$libmupdf_wasm_Module;
   }
-  const wasmBinary = wasm instanceof Uint8Array ? wasm : new Uint8Array(wasm);
-  return { wasmBinary };
 }
