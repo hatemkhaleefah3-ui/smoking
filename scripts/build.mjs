@@ -21,8 +21,26 @@ await cp(
   resolve(dist, 'vendor/mupdf-wasm.wasm')
 );
 
+const browserNodeBuiltins = {
+  name: 'browser-node-builtins',
+  setup(context) {
+    context.onResolve({ filter: /^(?:node:)?(?:module|fs|path)$/ }, (args) => ({
+      path: args.path.replace(/^node:/, ''),
+      namespace: 'browser-node-builtin'
+    }));
+    context.onLoad({ filter: /.*/, namespace: 'browser-node-builtin' }, ({ path }) => ({
+      loader: 'js',
+      contents: path === 'module'
+        ? `export function createRequire() { return () => { throw new Error('Node require is unavailable in this Worker.'); }; }\nexport default { createRequire };`
+        : `const unavailable = () => { throw new Error('Node ${path} is unavailable in this Worker.'); };\nexport const readFileSync = unavailable;\nexport const readFile = unavailable;\nexport const dirname = unavailable;\nexport const resolve = unavailable;\nexport const join = unavailable;\nexport const promises = {};\nexport default {};`
+    }));
+  }
+};
+
 // Cloudflare Pages Advanced Mode runs the bundled Module Worker at dist/_worker.js.
 // MuPDF's WASM binary is a static asset so it does not count toward Worker script size.
+// MuPDF contains runtime-guarded Node branches; remove them from this browser/Worker bundle
+// so Cloudflare Pages does not try to resolve Node built-ins while rebundling _worker.js.
 await build({
   entryPoints: [resolve(root, 'worker/src/entry.js')],
   outfile: resolve(dist, '_worker.js'),
@@ -32,7 +50,8 @@ await build({
   target: 'es2022',
   conditions: ['worker', 'browser', 'import', 'default'],
   mainFields: ['browser', 'module', 'main'],
-  external: ['node:module', 'module', 'node:fs', 'fs', 'node:path', 'path'],
+  define: { process: 'undefined' },
+  plugins: [browserNodeBuiltins],
   legalComments: 'inline',
   logLevel: 'info'
 });
