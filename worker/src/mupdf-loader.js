@@ -4,8 +4,7 @@ let mupdfPromise = null;
 
 export function loadMupdf() {
   if (!mupdfPromise) {
-    const wasmBinary = mupdfWasm instanceof Uint8Array ? mupdfWasm : new Uint8Array(mupdfWasm);
-    globalThis.$libmupdf_wasm_Module = { wasmBinary };
+    globalThis.$libmupdf_wasm_Module = createModuleOptions(mupdfWasm);
     mupdfPromise = import('mupdf').then((module) => {
       delete globalThis.$libmupdf_wasm_Module;
       return module.default || module;
@@ -16,4 +15,18 @@ export function loadMupdf() {
     });
   }
   return mupdfPromise;
+}
+
+function createModuleOptions(wasm) {
+  if (typeof WebAssembly !== 'undefined' && wasm instanceof WebAssembly.Module) {
+    return {
+      instantiateWasm(imports, successCallback) {
+        const instance = new WebAssembly.Instance(wasm, imports);
+        successCallback(instance, wasm);
+        return instance.exports;
+      }
+    };
+  }
+  const wasmBinary = wasm instanceof Uint8Array ? wasm : new Uint8Array(wasm);
+  return { wasmBinary };
 }
