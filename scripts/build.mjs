@@ -12,12 +12,17 @@ const files = [
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
+await mkdir(resolve(dist, 'vendor'), { recursive: true });
 for (const file of files) await cp(resolve(root, file), resolve(dist, file));
 await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: true });
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
+await cp(
+  resolve(root, 'node_modules/mupdf/dist/mupdf-wasm.wasm'),
+  resolve(dist, 'vendor/mupdf-wasm.wasm')
+);
 
 // Cloudflare Pages Advanced Mode runs the bundled Module Worker at dist/_worker.js.
-// MuPDF's WASM binary is inlined so the Pages artifact is self-contained.
+// MuPDF's WASM binary is a static asset so it does not count toward Worker script size.
 await build({
   entryPoints: [resolve(root, 'worker/src/entry.js')],
   outfile: resolve(dist, '_worker.js'),
@@ -25,7 +30,6 @@ await build({
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
-  loader: { '.wasm': 'binary' },
   conditions: ['worker', 'browser', 'import', 'default'],
   mainFields: ['browser', 'module', 'main'],
   external: ['node:module', 'module', 'node:fs', 'fs', 'node:path', 'path'],
