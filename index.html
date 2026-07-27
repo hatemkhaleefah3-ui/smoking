@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Import structured lecture JSON and export a reusable, self-contained HTML lecture page.">
+  <title>Lecture HTML Builder</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-content">
+      <div>
+        <p class="eyebrow">Reusable lecture publishing</p>
+        <h1>Lecture HTML Builder</h1>
+        <p class="subtitle">Import ChatGPT-formatted lecture JSON, review it, and download a polished standalone HTML file.</p>
+      </div>
+      <span class="version-badge">Schema v1.0</span>
+    </div>
+  </header>
+
+  <main class="shell app-layout">
+    <section class="panel controls-panel" aria-labelledby="import-title">
+      <div class="section-heading">
+        <div>
+          <p class="step-label">Step 1</p>
+          <h2 id="import-title">Import lecture JSON</h2>
+        </div>
+        <button id="load-example-button" class="button button-secondary" type="button">Load example</button>
+      </div>
+
+      <label id="drop-zone" class="drop-zone" for="file-input">
+        <span class="drop-icon" aria-hidden="true">↥</span>
+        <span class="drop-title">Choose or drop a JSON file</span>
+        <span class="drop-help">Use the output produced by <code>prompts/lecture-to-json.txt</code>.</span>
+        <input id="file-input" type="file" accept="application/json,.json">
+      </label>
+
+      <div class="button-row">
+        <button id="import-button" class="button button-primary" type="button">Import selected file</button>
+        <button id="download-html-button" class="button button-success" type="button" disabled>Download HTML</button>
+        <button id="download-json-button" class="button button-secondary" type="button" disabled>Download normalized JSON</button>
+      </div>
+
+      <div id="status" class="status status-neutral" role="status" aria-live="polite">
+        Loading the reusable HTML template…
+      </div>
+
+      <div id="document-details" class="document-details" hidden>
+        <h3>Imported document</h3>
+        <dl>
+          <div><dt>Title</dt><dd id="detail-title">—</dd></div>
+          <div><dt>Language</dt><dd id="detail-language">—</dd></div>
+          <div><dt>Sections</dt><dd id="detail-sections">—</dd></div>
+          <div><dt>Blocks</dt><dd id="detail-blocks">—</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section class="panel preview-panel" aria-labelledby="preview-title">
+      <div class="section-heading preview-heading">
+        <div>
+          <p class="step-label">Step 2</p>
+          <h2 id="preview-title">Preview and export</h2>
+        </div>
+        <span id="preview-state" class="preview-state">No document loaded</span>
+      </div>
+      <div class="preview-frame-wrap">
+        <iframe
+          id="preview-frame"
+          title="Generated lecture HTML preview"
+          sandbox="allow-same-origin"
+        ></iframe>
+        <div id="preview-placeholder" class="preview-placeholder">
+          <strong>Your lecture preview will appear here.</strong>
+          <span>Import a valid JSON file or load the example.</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel workflow-panel" aria-labelledby="workflow-title">
+      <p class="step-label">Workflow</p>
+      <h2 id="workflow-title">From lecture text to HTML</h2>
+      <ol class="workflow-list">
+        <li>Attach a plain-text lecture file to ChatGPT.</li>
+        <li>Use the prompt in <code>prompts/lecture-to-json.txt</code>.</li>
+        <li>Save ChatGPT’s JSON-only response as a <code>.json</code> file.</li>
+        <li>Import it here, verify the preview, and download the HTML file.</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell">Everything runs locally in your browser. Imported files are not uploaded by this page.</div>
+  </footer>
+</body>
+</html>
