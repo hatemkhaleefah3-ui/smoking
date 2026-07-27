@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lecture-publisher",
+  "main": "worker/src/index.js",
+  "compatibility_date": "2026-07-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/lecture/*", "/admin"]
+  },
+  "vars": {
+    "MAX_LECTURE_BYTES": "26214400",
+    "STORAGE_ALLOWANCE_BYTES": "10000000000"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lecture-links",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "LECTURES",
+      "bucket_name": "lecture-links"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

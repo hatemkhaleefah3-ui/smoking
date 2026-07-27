@@ -1,71 +1,174 @@
-# Lecture HTML Generator
+# Lecture Publisher
 
-A dependency-free browser app that converts structured lecture JSON into reusable lecture pages and lets visitors preview the same content in multiple designs.
+A dependency-free lecture website that validates structured JSON, supports three reusable designs, publishes permanent shareable links, and provides a protected storage administration panel.
 
-## Included designs
+## Visitor workflow
 
-- **Classic Academic** — the original clean, print-friendly template.
-- **Enhanced Modern** — a modern layout with a sidebar table of contents, objectives, statistics, and rich content blocks.
-- **Editorial Journal** — an editorial reading layout with refined typography, a compact contents menu, and decorative section numbering.
+1. Open the website.
+2. Choose a lecture JSON file.
+3. Select **Build** to validate it locally.
+4. Choose a design and select **Preview & publish**.
+5. Copy the permanent `/lecture/<id>` URL.
+6. Send the URL to another person.
+7. Both people can reopen the saved lecture later using the same link.
 
-## Key files
+Before a visitor builds a file, Preview opens the bundled example without saving it.
 
-- `templates/lecture-template.html` — Classic Academic.
-- `templates/lecture-template-enhanced.html` — Enhanced Modern.
-- `templates/lecture-template-editorial.html` — Editorial Journal.
-- `examples/lecture-output.example.json` — the shared schema v2.1 example that works with all three designs.
-- `prompts/lecture-to-json.txt` — the prompt to use with a lecture file and the example JSON file.
-- `index.html`, `styles.css`, and `app.js` — design selection, JSON validation, rendering, and separate-page preview.
+## Designs
 
-## Workflow
+- **Classic Academic**
+- **Enhanced Modern**
+- **Editorial Journal**
 
-1. Attach the lecture file and `examples/lecture-output.example.json` to ChatGPT.
-2. Use `prompts/lecture-to-json.txt`.
-3. Download ChatGPT's resulting `.json` file.
-4. Open this website and choose a design.
-5. Choose the JSON file and select **Build**.
-6. Select **Preview** to open only the finished lecture in a new page.
-7. Change the design and preview again without rebuilding the JSON.
+Schema versions `1.0` and `2.1` remain supported.
 
-Before a visitor builds a JSON file, Preview opens the included example lecture in the selected design.
+## Architecture
 
-## Supported input
+- **Cloudflare Worker + Static Assets** hosts the website and API together.
+- **Cloudflare R2** privately stores complete lecture JSON files.
+- **Cloudflare D1** stores title, link ID, selected design, object key, byte size and creation date.
+- Public lecture links retrieve JSON through the Worker; the R2 bucket is not public.
+- The current application upload limit is **25 MiB per normalized lecture JSON**. Change `MAX_LECTURE_BYTES` in `wrangler.jsonc` to adjust it, up to the applicable Cloudflare request limit.
 
-The app supports the original schema v1.0 files and the richer schema v2.1 format. Schema v2.1 adds theme colors, learning objectives, statistics, references, a document glossary, section icons, section summaries, and these richer block types:
+## Admin panel
 
-- key points
-- section summaries
-- steps
-- comparisons
-- timelines
-- columns
-- formulas
-- glossary blocks
+Open `/admin` after deployment. The panel provides:
 
-The original paragraph, heading, list, quote, callout, table, and code blocks remain supported.
+- Current tracked storage in MB/GB
+- Lecture count and oldest record
+- Search and sorting by title, date or size
+- Open and copy controls for every permanent link
+- Individual lecture deletion
+- Oldest-first cleanup of 10%, 20%, 50% or all stored bytes
 
-## Run locally
+The requested initial password is `0000`, but it is stored only as a Worker secret and never committed to browser code. Change it after initial testing.
 
-Browsers do not normally allow `fetch()` from a page opened with a `file://` URL. Serve the repository with a static server:
+## Cloudflare setup
+
+### Requirements
+
+- A free Cloudflare account
+- Node.js
+- R2 enabled in the Cloudflare dashboard; R2 may require completing its subscription/checkout flow even when usage stays inside the free allowance
+
+### 1. Authenticate Wrangler
 
 ```bash
-python3 -m http.server 8000
+npx --yes wrangler@4.34.0 login
 ```
 
-Then open `http://localhost:8000`.
+### 2. Create the D1 database
 
-## Publish with GitHub Pages
+```bash
+npx --yes wrangler@4.34.0 d1 create lecture-links --location apac
+```
 
-1. Open the repository's **Settings**.
-2. Open **Pages**.
-3. Under **Build and deployment**, select **Deploy from a branch**.
-4. Select the default branch and the `/ (root)` folder.
-5. Save.
+Copy the returned database UUID into `wrangler.jsonc`, replacing:
 
-## Safety and privacy
+```text
+REPLACE_WITH_D1_DATABASE_ID
+```
 
-- Imported JSON is processed locally in the browser.
-- The app does not upload lecture content.
-- Imported text is HTML-escaped before rendering.
-- Theme values are restricted to hexadecimal colors.
-- Reference links are restricted to HTTP and HTTPS URLs.
+### 3. Create the private R2 bucket
+
+```bash
+npx --yes wrangler@4.34.0 r2 bucket create lecture-links
+```
+
+Do not enable public bucket access. Lectures are served through the Worker.
+
+### 4. Apply the D1 migration
+
+```bash
+npx --yes wrangler@4.34.0 d1 migrations apply lecture-links --remote
+```
+
+### 5. Build and validate
+
+```bash
+npm test
+npm run build
+```
+
+### 6. Deploy the Worker and website
+
+```bash
+npx --yes wrangler@4.34.0 deploy
+```
+
+Wrangler prints a `workers.dev` URL. That URL becomes the permanent origin used by published lecture links.
+
+### 7. Configure the admin secrets
+
+Set the requested initial password:
+
+```bash
+printf '0000' | npx --yes wrangler@4.34.0 secret put ADMIN_PASSWORD
+```
+
+Create a long random session-signing secret:
+
+```bash
+openssl rand -base64 48 | npx --yes wrangler@4.34.0 secret put SESSION_SECRET
+```
+
+The secret commands create a new Worker version. Redeploy afterward only when source or configuration changes.
+
+## Local development
+
+Copy the example local secret file:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+Set a local password and session secret inside `.dev.vars`, then run:
+
+```bash
+npm run dev
+```
+
+For local D1 migrations:
+
+```bash
+npx --yes wrangler@4.34.0 d1 migrations apply lecture-links --local
+```
+
+## Useful routes
+
+```text
+/                         Publisher
+/lecture/<uuid>           Permanent public lecture
+/admin                    Password-protected admin panel
+POST /api/lectures        Publish a lecture
+GET  /api/lectures/<uuid> Retrieve a lecture
+```
+
+## Storage behavior
+
+D1 is the source of truth for tracked byte totals. Every successful R2 upload records its exact object size in D1. Cleanup deletes R2 objects first and then removes their D1 rows. Because complete lectures are deleted, the actual freed amount can be slightly greater than the requested percentage.
+
+The storage bar uses `STORAGE_ALLOWANCE_BYTES` from `wrangler.jsonc`. It is a dashboard reference, not an automatic billing stop.
+
+## Security notes
+
+- Admin credentials are Worker secrets.
+- Admin sessions are HMAC-signed, `HttpOnly`, `Secure`, and `SameSite=Strict`.
+- Secret comparisons use timing-safe Web Crypto operations.
+- Login attempts are throttled after repeated failures.
+- Publishing is limited per IP per hour.
+- Lecture content is normalized and HTML-escaped by the trusted renderer.
+- R2 objects are private and have unguessable UUID-based keys.
+- State-changing routes reject cross-origin browser requests.
+
+## Project files
+
+```text
+worker/src/index.js          Worker API and static routing
+migrations/0001_initial.sql  D1 schema
+lecture.html / lecture.js    Public permanent-link reader
+admin.html / admin.js        Storage administration panel
+lecture-renderer.js          Shared validator and safe renderer
+scripts/build.mjs            Static asset build
+wrangler.jsonc               Worker, R2, D1 and asset bindings
+```
