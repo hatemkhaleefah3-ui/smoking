@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Lecture Storage Admin</title>
+  <link rel="stylesheet" href="admin.css">
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <main class="admin-shell">
+    <section id="login-panel" class="admin-card login-card">
+      <p class="eyebrow">Restricted area</p>
+      <h1>Lecture storage admin</h1>
+      <p>Enter the administrator password to review storage and remove published links.</p>
+      <form id="login-form">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button type="submit">Sign in</button>
+      </form>
+      <div id="login-status" class="message" role="status" aria-live="polite"></div>
+    </section>
+
+    <section id="dashboard" hidden>
+      <header class="dashboard-header">
+        <div><p class="eyebrow">Cloudflare R2 + D1</p><h1>Lecture storage</h1></div>
+        <div class="header-actions"><a href="/">Publisher</a><button id="logout-button" class="secondary">Log out</button></div>
+      </header>
+
+      <div id="dashboard-status" class="message" role="status" aria-live="polite"></div>
+
+      <section class="stats-grid" aria-label="Storage summary">
+        <article class="admin-card stat"><span>Storage used</span><strong id="used-storage">—</strong><small id="usage-percent">—</small></article>
+        <article class="admin-card stat"><span>Stored lectures</span><strong id="lecture-count">—</strong><small id="oldest-lecture">—</small></article>
+        <article class="admin-card stat"><span>Tracked allowance</span><strong id="storage-allowance">10 GB</strong><small>R2 free-tier reference</small></article>
+      </section>
+
+      <section class="admin-card storage-card">
+        <div class="storage-heading"><div><h2>Storage usage</h2><p>The bar is based on the configured 10 GB reference allowance.</p></div><button id="refresh-button" class="secondary">Refresh</button></div>
+        <div class="progress-track" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
+        <div class="cleanup-grid">
+          <button data-cleanup="10" class="warning">Delete oldest 10%</button>
+          <button data-cleanup="20" class="warning">Delete oldest 20%</button>
+          <button data-cleanup="50" class="danger">Delete oldest 50%</button>
+          <button data-cleanup="100" class="danger">Delete everything</button>
+        </div>
+        <p class="help">Percentage cleanup deletes complete lectures, oldest first, until at least the selected percentage of current stored bytes is removed.</p>
+      </section>
+
+      <section class="admin-card lecture-list-card">
+        <div class="list-toolbar">
+          <div><h2>Published lecture links</h2><p>Titles come from each visitor's JSON file.</p></div>
+          <div class="filters">
+            <label>Search <input id="search-input" type="search" placeholder="Lecture title"></label>
+            <label>Sort <select id="sort-select"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="largest">Largest</option><option value="smallest">Smallest</option><option value="title">Title</option></select></label>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Lecture title</th><th>Design</th><th>Size</th><th>Created</th><th>Link</th><th>Action</th></tr></thead>
+            <tbody id="lecture-rows"><tr><td colspan="6">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="pagination"><button id="previous-button" class="secondary">Previous</button><span id="page-label">Page 1</span><button id="next-button" class="secondary">Next</button></div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
