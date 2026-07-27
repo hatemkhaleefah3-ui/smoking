@@ -7,6 +7,7 @@ const DEFAULT_ALLOWANCE_BYTES = 10_000_000_000;
 const PUBLISH_LIMIT_PER_HOUR = 20;
 const LOGIN_FAILURE_LIMIT = 5;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
+let schemaPromise = null;
 
 export default {
   async fetch(request, env) {
@@ -14,19 +15,34 @@ export default {
 
     try {
       if (request.method === 'GET' && /^\/lecture\/[0-9a-f-]{36}\/?$/i.test(url.pathname)) {
-        return serveAsset(env, request, '/lecture.html');
+        return serveAsset(env, request, '/lecture');
       }
       if (request.method === 'GET' && (url.pathname === '/admin' || url.pathname === '/admin/')) {
-        return serveAsset(env, request, '/admin.html');
+        return serveAsset(env, request, '/admin');
+      }
+
+      if (url.pathname.startsWith('/api/')) await ensureDatabase(env);
+
+      if (url.pathname === '/api/health' && request.method === 'GET') {
+        const storageReady = Boolean(env.LECTURES);
+        const adminReady = Boolean(env.ADMIN_PASSWORD && env.SESSION_SECRET);
+        return json({
+          ok: storageReady && adminReady,
+          databaseReady: true,
+          storageReady,
+          adminSecretsReady: adminReady
+        }, storageReady && adminReady ? 200 : 503);
       }
 
       if (url.pathname === '/api/lectures' && request.method === 'POST') {
         assertSameOrigin(request, url);
+        requireLectureStorage(env);
         return publishLecture(request, env, url);
       }
 
       const publicLectureMatch = url.pathname.match(/^\/api\/lectures\/([0-9a-f-]{36})$/i);
       if (publicLectureMatch && request.method === 'GET') {
+        requireLectureStorage(env);
         return getLecture(publicLectureMatch[1], env);
       }
 
@@ -48,10 +64,16 @@ export default {
 
         if (url.pathname === '/api/admin/storage' && request.method === 'GET') return adminStorage(env);
         if (url.pathname === '/api/admin/lectures' && request.method === 'GET') return adminLectures(env, url);
-        if (url.pathname === '/api/admin/cleanup' && request.method === 'POST') return adminCleanup(request, env);
+        if (url.pathname === '/api/admin/cleanup' && request.method === 'POST') {
+          requireLectureStorage(env);
+          return adminCleanup(request, env);
+        }
 
         const deleteMatch = url.pathname.match(/^\/api\/admin\/lectures\/([0-9a-f-]{36})$/i);
-        if (deleteMatch && request.method === 'DELETE') return adminDeleteLecture(deleteMatch[1], env);
+        if (deleteMatch && request.method === 'DELETE') {
+          requireLectureStorage(env);
+          return adminDeleteLecture(deleteMatch[1], env);
+        }
       }
 
       if (url.pathname.startsWith('/api/')) return json({ error: 'API route not found.' }, 404);
@@ -63,6 +85,54 @@ export default {
     }
   }
 };
+
+async function ensureDatabase(env) {
+  if (!env.DB) throw new HttpError(500, 'D1 binding “DB” is not configured for this environment.');
+  if (!schemaPromise) {
+    schemaPromise = createSchema(env.DB).catch((error) => {
+      schemaPromise = null;
+      throw error;
+    });
+  }
+  try {
+    await schemaPromise;
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'schema_initialization_failed', message: error instanceof Error ? error.message : String(error) }));
+    throw new HttpError(500, 'The lecture database could not be initialized. Check the DB binding and retry.');
+  }
+}
+
+async function createSchema(db) {
+  await db.batch([
+    db.prepare(`CREATE TABLE IF NOT EXISTS lectures (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      design_id TEXT NOT NULL CHECK (design_id IN ('classic', 'enhanced', 'editorial')),
+      schema_version TEXT NOT NULL CHECK (schema_version IN ('1.0', '2.1')),
+      r2_key TEXT NOT NULL UNIQUE,
+      size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare('CREATE INDEX IF NOT EXISTS lectures_created_at_idx ON lectures(created_at)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS lectures_size_bytes_idx ON lectures(size_bytes)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS lectures_title_idx ON lectures(title COLLATE NOCASE)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS publish_rate_limits (
+      ip TEXT PRIMARY KEY,
+      window_started INTEGER NOT NULL,
+      publish_count INTEGER NOT NULL DEFAULT 0
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS admin_login_attempts (
+      ip TEXT PRIMARY KEY,
+      window_started INTEGER NOT NULL,
+      failures INTEGER NOT NULL DEFAULT 0,
+      blocked_until INTEGER NOT NULL DEFAULT 0
+    )`)
+  ]);
+}
+
+function requireLectureStorage(env) {
+  if (!env.LECTURES) throw new HttpError(500, 'R2 binding “LECTURES” is not configured for this environment.');
+}
 
 async function publishLecture(request, env, url) {
   const contentType = request.headers.get('Content-Type') || '';
@@ -128,7 +198,9 @@ async function getLecture(id, env) {
 }
 
 async function adminLogin(request, env) {
-  if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) throw new Error('Admin secrets are not configured.');
+  if (!env.ADMIN_PASSWORD || !env.SESSION_SECRET) {
+    throw new HttpError(500, 'Admin secrets are not configured for this environment.');
+  }
   const ip = clientIp(request);
   await assertLoginAllowed(env.DB, ip);
 

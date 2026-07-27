@@ -54,15 +54,19 @@ function bindEvents() {
 async function login(event) {
   event.preventDefault();
   setMessage(elements.loginStatus, 'Signing in…');
-  const response = await fetch('/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: elements.password.value })
-  });
-  const result = await readJson(response);
-  if (!response.ok) return setMessage(elements.loginStatus, result.error || 'Sign-in failed.', 'error');
-  elements.password.value = '';
-  await showDashboard();
+  try {
+    const response = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: elements.password.value })
+    });
+    const result = await readJson(response);
+    if (!response.ok) return setMessage(elements.loginStatus, result.error || `Sign-in failed with status ${response.status}.`, 'error');
+    elements.password.value = '';
+    await showDashboard();
+  } catch (error) {
+    setMessage(elements.loginStatus, error.message || 'The admin service could not be reached.', 'error');
+  }
 }
 
 async function logout() {
@@ -207,6 +211,11 @@ function designName(id) { return ({ classic: 'Classic Academic', enhanced: 'Enha
 function ensureAuthorized(response) { if (response.status === 401) throw new Error('UNAUTHORIZED'); }
 function toggleCleanup(disabled) { elements.cleanupButtons.forEach((button) => { button.disabled = disabled; }); }
 function setMessage(element, message, type = '') { element.textContent = message; element.className = `message ${type}`.trim(); }
-async function readJson(response) { try { return await response.json(); } catch { return {}; } }
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text); }
+  catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
+}
 function formatBytes(bytes) { const value = Number(bytes) || 0; if (value < 1024) return `${value} B`; if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`; if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(2)} MB`; return `${(value / 1024 ** 3).toFixed(2)} GB`; }
 function formatDate(value) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)); }

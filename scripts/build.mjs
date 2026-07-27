@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,17 +16,8 @@ await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: tr
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
 
 // Cloudflare Pages Advanced Mode runs a Module Worker placed at dist/_worker.js.
-// Pages' ASSETS binding expects extensionless "pretty paths", not physical .html names.
-const workerSource = await readFile(resolve(root, 'worker/src/index.js'), 'utf8');
-const pagesWorker = workerSource
-  .replace("serveAsset(env, request, '/lecture.html')", "serveAsset(env, request, '/lecture')")
-  .replace("serveAsset(env, request, '/admin.html')", "serveAsset(env, request, '/admin')");
-
-if (pagesWorker === workerSource) {
-  throw new Error('Pages asset-route patch was not applied; Worker source changed unexpectedly.');
-}
-
-await writeFile(resolve(dist, '_worker.js'), pagesWorker);
+// The shared Worker source now uses Pages-compatible pretty asset paths directly.
+await cp(resolve(root, 'worker/src/index.js'), resolve(dist, '_worker.js'));
 
 // A second Cloudflare Workers build is connected to the same repository. Wrangler
 // must not publish the Pages server module as a public static asset.

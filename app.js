@@ -140,7 +140,7 @@ async function previewLecture() {
     previewWindow.location.replace(publication.url);
     setStatus(`Published “${state.documentData.document.title}”. Its permanent link is ready to share.`, 'success');
   } catch (error) {
-    previewWindow.close();
+    showPreviewError(previewWindow, error.message || 'Publishing failed.');
     setStatus(`Could not publish the preview: ${error.message}`, 'error');
   }
 }
@@ -163,7 +163,7 @@ async function publishCurrentLecture() {
     body: payload
   });
   const result = await readJsonResponse(response);
-  if (!response.ok) throw new Error(result.error || 'Publishing failed.');
+  if (!response.ok) throw new Error(result.error || `Publishing failed with status ${response.status}.`);
 
   state.publication = { id: result.id, url: result.url, designId };
   elements.copyButton.hidden = false;
@@ -227,8 +227,19 @@ function setStatus(message, type) {
   elements.status.className = `status status-${type}`;
 }
 
+function showPreviewError(previewWindow, message) {
+  previewWindow.document.open();
+  previewWindow.document.write('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Publishing failed</title><main style="font-family:system-ui;max-width:680px;margin:12vh auto;padding:24px"><h1>Publishing failed</h1><p id="publishing-error"></p><p><a href="/">Return to Lecture Publisher</a></p></main>');
+  previewWindow.document.close();
+  const errorElement = previewWindow.document.querySelector('#publishing-error');
+  if (errorElement) errorElement.textContent = message;
+}
+
 async function readJsonResponse(response) {
-  try { return await response.json(); } catch { return {}; }
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text); }
+  catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
 }
 
 function formatBytes(bytes) {
