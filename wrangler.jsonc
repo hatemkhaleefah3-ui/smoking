@@ -1,9 +1,16 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "smoking",
-  "main": "worker/src/index.js",
+  "main": "worker/src/entry.js",
   "compatibility_date": "2026-07-27",
   "compatibility_flags": ["nodejs_compat"],
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm"],
+      "fallthrough": true
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -11,6 +18,8 @@
   },
   "vars": {
     "MAX_LECTURE_BYTES": "26214400",
+    "MAX_PDF_BYTES": "26214400",
+    "MAX_EXTRACTED_IMAGE_BYTES": "67108864",
     "STORAGE_ALLOWANCE_BYTES": "10000000000"
   },
   "d1_databases": [
@@ -24,6 +33,10 @@
   "r2_buckets": [
     {
       "binding": "LECTURES",
+      "bucket_name": "lecture-links"
+    },
+    {
+      "binding": "PDF_EXTRACTIONS",
       "bucket_name": "lecture-links"
     }
   ],
