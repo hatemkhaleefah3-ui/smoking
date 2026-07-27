@@ -1,31 +1,52 @@
 # Lecture HTML Generator
 
-A dependency-free browser app that converts structured lecture JSON into a polished, reusable, self-contained HTML document.
+A dependency-free browser app that converts structured lecture JSON into reusable lecture pages and lets visitors preview the same content in multiple designs.
 
-## What is included
+## Included designs
 
-- `templates/lecture-template.html` — the reusable standalone HTML template.
-- `schema/lecture-output.schema.json` — the formal ChatGPT output contract.
-- `prompts/lecture-to-json.txt` — a ready-to-use prompt for converting an attached plain-text lecture file into the required JSON.
-- `index.html` — the import, preview, and export page.
-- `app.js` — validation, safe rendering, preview, and download logic.
-- `styles.css` — the website interface styles.
-- `examples/lecture-output.example.json` — a valid example input.
+- **Classic Academic** — the original clean, print-friendly template.
+- **Enhanced Modern** — a modern layout with a sidebar table of contents, objectives, statistics, and rich content blocks.
+- **Editorial Journal** — an editorial reading layout with refined typography, a compact contents menu, and decorative section numbering.
+
+## Key files
+
+- `templates/lecture-template.html` — Classic Academic.
+- `templates/lecture-template-enhanced.html` — Enhanced Modern.
+- `templates/lecture-template-editorial.html` — Editorial Journal.
+- `examples/lecture-output.example.json` — the shared schema v2.1 example that works with all three designs.
+- `prompts/lecture-to-json.txt` — the prompt to use with a lecture file and the example JSON file.
+- `index.html`, `styles.css`, and `app.js` — design selection, JSON validation, rendering, and separate-page preview.
 
 ## Workflow
 
-1. Save the lecture as a plain-text `.txt` file.
-2. Attach the file to ChatGPT.
-3. Paste the prompt from `prompts/lecture-to-json.txt`.
-4. Save ChatGPT's JSON-only response as a `.json` file.
-5. Open this website and import the JSON file.
-6. Review the preview and select **Download HTML**.
+1. Attach the lecture file and `examples/lecture-output.example.json` to ChatGPT.
+2. Use `prompts/lecture-to-json.txt`.
+3. Download ChatGPT's resulting `.json` file.
+4. Open this website and choose a design.
+5. Choose the JSON file and select **Build**.
+6. Select **Preview** to open only the finished lecture in a new page.
+7. Change the design and preview again without rebuilding the JSON.
 
-The downloaded HTML is self-contained: its layout and CSS are embedded, so it can be opened, shared, hosted, or printed without this app.
+Before a visitor builds a JSON file, Preview opens the included example lecture in the selected design.
+
+## Supported input
+
+The app supports the original schema v1.0 files and the richer schema v2.1 format. Schema v2.1 adds theme colors, learning objectives, statistics, references, a document glossary, section icons, section summaries, and these richer block types:
+
+- key points
+- section summaries
+- steps
+- comparisons
+- timelines
+- columns
+- formulas
+- glossary blocks
+
+The original paragraph, heading, list, quote, callout, table, and code blocks remain supported.
 
 ## Run locally
 
-Browsers do not normally allow `fetch()` from a page opened with a `file://` URL. Serve the repository with any small static server instead:
+Browsers do not normally allow `fetch()` from a page opened with a `file://` URL. Serve the repository with a static server:
 
 ```bash
 python3 -m http.server 8000
@@ -35,43 +56,16 @@ Then open `http://localhost:8000`.
 
 ## Publish with GitHub Pages
 
-After the files are on the default branch:
-
 1. Open the repository's **Settings**.
 2. Open **Pages**.
 3. Under **Build and deployment**, select **Deploy from a branch**.
 4. Select the default branch and the `/ (root)` folder.
 5. Save.
 
-## Input format
-
-Every imported file must contain:
-
-```json
-{
-  "schemaVersion": "1.0",
-  "document": {
-    "title": "...",
-    "language": "en",
-    "direction": "ltr",
-    "course": "",
-    "lectureNumber": "",
-    "lecturer": "",
-    "date": "",
-    "summary": "",
-    "keywords": [],
-    "sections": []
-  }
-}
-```
-
-See `schema/lecture-output.schema.json` for the exact rules and `examples/lecture-output.example.json` for a complete example.
-
-Supported content blocks are paragraphs, level 3/4 headings, ordered or unordered lists, quotations, callouts, tables, and code blocks.
-
 ## Safety and privacy
 
 - Imported JSON is processed locally in the browser.
 - The app does not upload lecture content.
-- Imported text is HTML-escaped before it is inserted into the generated document.
-- The preview runs inside a sandboxed iframe.
+- Imported text is HTML-escaped before rendering.
+- Theme values are restricted to hexadecimal colors.
+- Reference links are restricted to HTTP and HTTPS URLs.
