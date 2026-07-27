@@ -1,8 +1,14 @@
 let mupdfPromise = null;
+let assetsBinding = null;
 
-export function loadMupdf(env) {
+export function configureMupdfAssets(assets) {
+  if (!assets) throw new Error('The ASSETS binding is required to load MuPDF.');
+  assetsBinding = assets;
+}
+
+export function loadMupdf() {
   if (!mupdfPromise) {
-    mupdfPromise = initializeMupdf(env).catch((error) => {
+    mupdfPromise = initializeMupdf().catch((error) => {
       mupdfPromise = null;
       throw error;
     });
@@ -10,10 +16,10 @@ export function loadMupdf(env) {
   return mupdfPromise;
 }
 
-async function initializeMupdf(env) {
-  if (!env?.ASSETS) throw new Error('The ASSETS binding is required to load MuPDF.');
+async function initializeMupdf() {
+  if (!assetsBinding) throw new Error('MuPDF assets have not been configured.');
 
-  const response = await env.ASSETS.fetch('https://assets.local/vendor/mupdf-wasm.wasm');
+  const response = await assetsBinding.fetch('https://assets.local/vendor/mupdf-wasm.wasm');
   if (!response.ok) throw new Error(`MuPDF WASM asset could not be loaded (${response.status}).`);
 
   const wasmBinary = new Uint8Array(await response.arrayBuffer());
