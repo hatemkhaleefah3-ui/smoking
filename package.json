@@ -4,8 +4,15 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --check app.js && node --check lecture-renderer.js && node --check lecture.js && node --check admin.js && node --check worker/src/index.js && node scripts/test-renderer.mjs",
+    "test": "node --check app.js && node --check pdf-extractor.js && node --check lecture-renderer.js && node --check lecture.js && node --check admin.js && node --check worker/src/index.js && node --check worker/src/pdf-extractor.js && node --check worker/src/mupdf-loader.js && node scripts/test-renderer.mjs",
     "dev": "npm run build && npx --yes wrangler@4.34.0 dev",
     "deploy": "npm run test && npm run build && npx --yes wrangler@4.34.0 deploy"
+  },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "mupdf": "1.28.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }
