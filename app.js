@@ -1,79 +1,238 @@
 'use strict';
 
-const DESIGNS={
-  classic:{name:'Classic Academic',url:'templates/lecture-template.html'},
-  enhanced:{name:'Enhanced Modern',url:'templates/lecture-template-enhanced.html'},
-  editorial:{name:'Editorial Journal',url:'templates/lecture-template-editorial.html'}
+const DESIGNS = {
+  classic: { name: 'Classic Academic', templateUrl: 'templates/lecture-template.html' },
+  enhanced: { name: 'Enhanced Modern', templateUrl: 'templates/lecture-template-enhanced.html' },
+  editorial: { name: 'Editorial Journal', templateUrl: 'templates/lecture-template-editorial.html' }
 };
-const EXAMPLE_URL='examples/lecture-output.example.json';
-const RTL=new Set(['ar','fa','he','ur','ps','sd','ug','yi']);
-const DEFAULT_THEME={accentColor:'#3459d1',accentMid:'#203d9f',accentSoft:'#a8b9f2',accentPale:'#edf1ff',heroGradient:{start:'#172554',end:'#3459d1'}};
-const $=(s)=>document.querySelector(s);
-const els={file:$('#file-input'),build:$('#build-button'),preview:$('#preview-button'),drop:$('#drop-zone'),fileName:$('#selected-file-name'),status:$('#status'),details:$('#document-details'),title:$('#detail-title'),language:$('#detail-language'),sections:$('#detail-sections'),blocks:$('#detail-blocks'),designs:[...document.querySelectorAll('input[name="design"]')]};
-const state={templates:new Map(),example:null,file:null,data:null};
+const EXAMPLE_URL = 'examples/lecture-output.example.json';
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-init();
-async function init(){bind();selectCard();try{const [template,example]=await Promise.all([loadTemplate(selectedDesign()),fetchJson(EXAMPLE_URL)]);state.templates.set(selectedDesign(),template);state.example=normalize(example);els.preview.disabled=false;status('Ready. Preview the example or choose a JSON file and select Build.','success')}catch(error){status('Could not load the designs or example. Open the site through a web server or GitHub Pages.','error');console.error(error)}}
-function bind(){
-  els.build.addEventListener('click',build);
-  els.preview.addEventListener('click',preview);
-  els.file.addEventListener('change',()=>{if(els.file.files[0])chooseFile(els.file.files[0])});
-  els.designs.forEach(input=>input.addEventListener('change',async()=>{selectCard();try{await loadTemplate(input.value);status(`Selected ${DESIGNS[input.value].name}. Preview will use this design.`,'success')}catch(error){status(error.message,'error')}}));
-  ['dragenter','dragover'].forEach(name=>els.drop.addEventListener(name,event=>{event.preventDefault();els.drop.classList.add('is-dragging')}));
-  ['dragleave','drop'].forEach(name=>els.drop.addEventListener(name,event=>{event.preventDefault();els.drop.classList.remove('is-dragging')}));
-  els.drop.addEventListener('drop',event=>{if(event.dataTransfer.files[0])chooseFile(event.dataTransfer.files[0])});
+const elements = {
+  fileInput: document.querySelector('#file-input'),
+  buildButton: document.querySelector('#build-button'),
+  previewButton: document.querySelector('#preview-button'),
+  copyButton: document.querySelector('#copy-link-button'),
+  dropZone: document.querySelector('#drop-zone'),
+  selectedFileName: document.querySelector('#selected-file-name'),
+  status: document.querySelector('#status'),
+  documentDetails: document.querySelector('#document-details'),
+  detailTitle: document.querySelector('#detail-title'),
+  detailLanguage: document.querySelector('#detail-language'),
+  detailSections: document.querySelector('#detail-sections'),
+  detailBlocks: document.querySelector('#detail-blocks'),
+  publishedLink: document.querySelector('#published-link'),
+  designInputs: [...document.querySelectorAll('input[name="design"]')]
+};
+
+const state = {
+  templates: new Map(),
+  exampleData: null,
+  selectedFile: null,
+  documentData: null,
+  publication: null
+};
+
+initialize();
+
+async function initialize() {
+  bindEvents();
+  selectDesignCard();
+  try {
+    const [template, example] = await Promise.all([loadTemplate(selectedDesignId()), fetchJson(EXAMPLE_URL)]);
+    state.templates.set(selectedDesignId(), template);
+    state.exampleData = LectureRenderer.normalize(example);
+    elements.previewButton.disabled = false;
+    setStatus('Ready. Preview the example or choose a JSON file and select Build.', 'success');
+  } catch (error) {
+    setStatus('Could not load the designs or example lecture. Open the deployed Cloudflare site or use a local web server.', 'error');
+    console.error(error);
+  }
 }
-function selectCard(){document.querySelectorAll('.design-option').forEach(card=>card.classList.toggle('is-selected',Boolean(card.querySelector('input')?.checked)))}
-function chooseFile(file){state.file=file;els.fileName.textContent=`Selected: ${file.name}`;status(`Selected ${file.name}. Select Build to validate it.`,'neutral')}
-async function build(){const file=state.file||els.file.files[0];if(!file)return status('Choose a JSON file first.','error');if(!file.name.toLowerCase().endsWith('.json'))return status('The selected file must use the .json extension.','error');try{state.data=normalize(JSON.parse(stripFence(await file.text())));showDetails(state.data);status(`Built ${file.name} successfully. Choose a design and select Preview.`,'success')}catch(error){state.data=null;els.details.hidden=true;status(`Build failed: ${error.message}`,'error')}}
-async function preview(){const win=window.open('','_blank');if(!win)return status('The preview window was blocked. Allow pop-ups and try again.','error');win.document.write('<!doctype html><title>Loading…</title><p style="font-family:system-ui;padding:24px">Loading lecture preview…</p>');win.document.close();try{const id=selectedDesign(),template=await loadTemplate(id),data=state.data||state.example;if(!data)throw new Error('Example lecture is unavailable.');const html=render(data,template,id);win.document.open();win.document.write(html);win.document.close();status(`Opened the ${state.data?'built':'example'} lecture with ${DESIGNS[id].name}.`,'success')}catch(error){win.close();status(`Could not open preview: ${error.message}`,'error')}}
-async function loadTemplate(id){if(state.templates.has(id))return state.templates.get(id);const response=await fetch(DESIGNS[id].url,{cache:'no-store'});if(!response.ok)throw new Error(`Could not load ${DESIGNS[id].name}.`);const text=await response.text();state.templates.set(id,text);return text}
-async function fetchJson(url){const response=await fetch(url,{cache:'no-store'});if(!response.ok)throw new Error('Could not load example JSON.');return response.json()}
-function selectedDesign(){return els.designs.find(input=>input.checked)?.value||'classic'}
 
-function normalize(input){
-  assert(object(input),'Top-level JSON must be an object.');
-  assert(['1.0','2.1'].includes(input.schemaVersion),'schemaVersion must be "1.0" or "2.1".');
-  const d=input.document;assert(object(d),'document must be an object.');
-  const title=req(d.title,'document.title'),language=req(d.language,'document.language');
-  const direction=['ltr','rtl'].includes(d.direction)?d.direction:(RTL.has(language.toLowerCase().split('-')[0])?'rtl':'ltr');
-  assert(Array.isArray(d.sections)&&d.sections.length,'document.sections must contain at least one section.');
-  const seen=new Set();
-  const sections=d.sections.map((section,i)=>{assert(object(section),`section ${i+1} must be an object.`);const id=req(section.id,`section ${i+1} id`);assert(/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id),'Section IDs must be lowercase kebab-case.');assert(!seen.has(id),'Section IDs must be unique.');seen.add(id);assert(Array.isArray(section.blocks),'Every section needs a blocks array.');return{id,title:req(section.title,`section ${i+1} title`),icon:str(section.icon),sectionSummaryLine:str(section.sectionSummaryLine),blocks:section.blocks.map((block,j)=>normalizeBlock(block,`section ${i+1}, block ${j+1}`))}});
-  return{schemaVersion:input.schemaVersion,document:{title,language,direction,course:str(d.course),lectureNumber:str(d.lectureNumber),lecturer:str(d.lecturer),date:str(d.date),readingTimeMinutes:num(d.readingTimeMinutes),summary:str(d.summary),keywords:strings(d.keywords),learningObjectives:strings(d.learningObjectives),stats:objects(d.stats).map(x=>({value:str(x.value),label:str(x.label)})),sections,references:objects(d.references).map(x=>({id:str(x.id),text:req(x.text,'reference text'),url:safeUrl(x.url)})),glossary:objects(d.glossary).map(x=>({term:req(x.term,'glossary term'),definition:req(x.definition,'glossary definition')})),theme:normalizeTheme(d.theme)}}}
-function normalizeTheme(theme){theme=object(theme)?theme:{};const hero=object(theme.heroGradient)?theme.heroGradient:{};return{accentColor:color(theme.accentColor,DEFAULT_THEME.accentColor),accentMid:color(theme.accentMid,DEFAULT_THEME.accentMid),accentSoft:color(theme.accentSoft,DEFAULT_THEME.accentSoft),accentPale:color(theme.accentPale,DEFAULT_THEME.accentPale),heroGradient:{start:color(hero.start,DEFAULT_THEME.heroGradient.start),end:color(hero.end,DEFAULT_THEME.heroGradient.end)}}}
-function normalizeBlock(block,path){assert(object(block),`${path} must be an object.`);const type=req(block.type,`${path}.type`);switch(type){
-  case'paragraph':return{type,text:req(block.text,`${path}.text`)};case'sectionSummary':return{type,title:str(block.title)||'Section summary',text:str(block.text),points:strings(block.points)};
-  case'heading':return{type,level:[3,4].includes(block.level)?block.level:3,text:req(block.text,`${path}.text`)};
-  case'list':return{type,style:block.style==='ordered'?'ordered':'unordered',items:strings(block.items,true)};
-  case'quote':return{type,text:req(block.text,`${path}.text`),attribution:str(block.attribution)};
-  case'callout':return{type,tone:['note','important','warning','definition','tip','success'].includes(block.tone)?block.tone:'note',title:str(block.title),text:req(block.text,`${path}.text`)};
-  case'table':{const headers=strings(block.headers,true),rows=Array.isArray(block.rows)?block.rows.map(row=>{assert(Array.isArray(row)&&row.length===headers.length,`${path} table rows must match the headers.`);return row.map(str)}):[];return{type,headers,rows}}
-  case'code':return{type,language:str(block.language),code:req(block.code,`${path}.code`)};
-  case'keyPoints':return{type,title:str(block.title)||'Key points',items:strings(block.items,true)};
-  case'steps':return{type,title:str(block.title),items:objects(block.items).map((x,i)=>({title:req(x.title,`${path} step ${i+1} title`),text:req(x.text,`${path} step ${i+1} text`)}))};
-  case'comparison':return{type,title:str(block.title),leftTitle:str(block.leftTitle),rightTitle:str(block.rightTitle),rows:objects(block.rows).map(x=>({label:str(x.label),left:str(x.left),right:str(x.right)}))};
-  case'timeline':return{type,items:objects(block.items).map(x=>({date:str(x.date),title:req(x.title,`${path} timeline title`),text:str(x.text)}))};
-  case'columns':return{type,columns:objects(block.columns).map((column,i)=>({title:str(column.title),blocks:(Array.isArray(column.blocks)?column.blocks:[]).map((nested,j)=>normalizeBlock(nested,`${path} column ${i+1}, block ${j+1}`))}))};
-  case'formula':return{type,title:str(block.title),expression:req(block.expression,`${path}.expression`),description:str(block.description)};
-  case'glossary':return{type,items:objects(block.items).map(x=>({term:req(x.term,`${path} glossary term`),definition:req(x.definition,`${path} glossary definition`)}))};
-  case'divider':return{type};
-  default:throw new Error(`${path}.type "${type}" is not supported.`)
-}}
+function bindEvents() {
+  elements.buildButton.addEventListener('click', buildSelectedFile);
+  elements.previewButton.addEventListener('click', previewLecture);
+  elements.copyButton.addEventListener('click', copyPublishedLink);
+  elements.fileInput.addEventListener('change', () => {
+    const file = elements.fileInput.files[0];
+    if (file) chooseFile(file);
+  });
+  elements.designInputs.forEach((input) => input.addEventListener('change', async () => {
+    selectDesignCard();
+    clearPublication();
+    try {
+      await loadTemplate(input.value);
+      setStatus(`Selected ${DESIGNS[input.value].name}. Preview will use this design.`, 'success');
+    } catch (error) {
+      setStatus(error.message, 'error');
+    }
+  }));
+  ['dragenter', 'dragover'].forEach((eventName) => elements.dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.add('is-dragging');
+  }));
+  ['dragleave', 'drop'].forEach((eventName) => elements.dropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    elements.dropZone.classList.remove('is-dragging');
+  }));
+  elements.dropZone.addEventListener('drop', (event) => {
+    const file = event.dataTransfer.files[0];
+    if (file) chooseFile(file);
+  });
+}
 
-function render(data,template,design){const d=data.document,t=d.theme,sections=d.sections.map((s,i)=>renderSection(s,i,design)).join(''),objectives=renderObjectives(d.learningObjectives),refs=renderReferences(d.references),glossary=renderGlossary(d.glossary),dedicated=template.includes('{{OBJECTIVES_SECTION}}');const content=dedicated?sections:objectives+sections+refs+glossary;const metadata=[['Lecture',d.lectureNumber],['Lecturer',d.lecturer],['Date',d.date],['Reading',d.readingTimeMinutes?`${d.readingTimeMinutes} min`:'']].filter(x=>x[1]).map(x=>`<span><strong>${esc(x[0])}:</strong> ${esc(x[1])}</span>`).join('');const replacements={LANGUAGE:attr(d.language),DIRECTION:attr(d.direction),META_DESCRIPTION:attr(d.summary||`Lecture notes for ${d.title}`),DOCUMENT_TITLE:esc(d.title),COURSE_LABEL:esc([d.course,d.lectureNumber].filter(Boolean).join(' · ')||'Lecture notes'),LECTURE_TITLE:esc(d.title),METADATA:metadata,HERO_STATS:renderStats(d.stats),KEYWORDS_BAR:d.keywords.length?`<div class="keywords-bar">${d.keywords.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:'',SUMMARY_SECTION:d.summary?`<section class="summary"><strong>Summary</strong><p>${esc(d.summary)}</p></section>`:'',OBJECTIVES_SECTION:objectives,CONTENT:content,REFERENCES_SECTION:refs,GLOSSARY_SECTION:glossary,TABLE_OF_CONTENTS:renderToc(d.sections),HEADER_TOC:renderToc(d.sections),ACCENT_COLOR:css(t.accentColor),ACCENT_MID:css(t.accentMid),ACCENT_SOFT:css(t.accentSoft),ACCENT_PALE:css(t.accentPale),HERO_GRADIENT_START:css(t.heroGradient.start),HERO_GRADIENT_END:css(t.heroGradient.end),GENERATED_AT:new Date().toISOString().slice(0,10),SCHEMA_VERSION:esc(data.schemaVersion)};let html=Object.entries(replacements).reduce((out,[key,value])=>out.split(`{{${key}}}`).join(value),template);return html.replace(/{{[A-Z0-9_]+}}/g,'')}
-function renderSection(section,index,design){const heading=design==='editorial'?`<div class="section-kicker">Section ${pad(index+1)}</div><h2>${esc(section.title)}</h2>`:`<h2>${section.icon?`<span class="section-icon">${esc(section.icon)}</span>`:''}${esc(section.title)}</h2>`;return`<section class="lecture-section" id="${attr(section.id)}">${heading}${section.sectionSummaryLine?`<p class="section-summary-line">${esc(section.sectionSummaryLine)}</p>`:''}${section.blocks.map(block=>renderBlock(block,design)).join('')}</section>`}
-function renderBlock(block,design){switch(block.type){
-  case'paragraph':return`<p>${esc(block.text)}</p>`;case'heading':return`<h${block.level}>${esc(block.text)}</h${block.level}>`;case'list':{const tag=block.style==='ordered'?'ol':'ul';return`<${tag}>${block.items.map(x=>`<li>${esc(x)}</li>`).join('')}</${tag}>`};case'quote':return`<blockquote>${esc(block.text)}${block.attribution?`<cite>${esc(block.attribution)}</cite>`:''}</blockquote>`;case'callout':return`<aside class="callout callout-${attr(block.tone)}">${block.title?`<strong class="callout-title">${esc(block.title)}</strong>`:''}<p>${esc(block.text)}</p></aside>`;case'table':return`<div class="table-wrap"><table><thead><tr>${block.headers.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${block.rows.map(row=>`<tr>${row.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;case'code':return`<pre><code>${esc(block.code)}</code></pre>`;case'keyPoints':return`<aside class="key-points"><strong>${esc(block.title)}</strong><ul>${block.items.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></aside>`;case'sectionSummary':return`<div class="section-summary"><strong>${esc(block.title)}</strong>${block.text?`<p>${esc(block.text)}</p>`:''}${block.points.length?`<ul>${block.points.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}</div>`;case'steps':return`<div class="steps-block">${block.title?`<h3>${esc(block.title)}</h3>`:''}${block.items.map((x,i)=>`<div class="step-item"><span>${pad(i+1)}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p></div></div>`).join('')}</div>`;case'comparison':return`<div class="comparison-block">${block.title?`<h3>${esc(block.title)}</h3>`:''}<div class="comparison-head"><strong></strong><strong>${esc(block.leftTitle)}</strong><strong>${esc(block.rightTitle)}</strong></div>${block.rows.map(x=>`<div class="comparison-row"><strong>${esc(x.label)}</strong><span>${esc(x.left)}</span><span>${esc(x.right)}</span></div>`).join('')}</div>`;case'timeline':return`<div class="timeline-block">${block.items.map(x=>`<div class="timeline-item"><time>${esc(x.date)}</time><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p></div></div>`).join('')}</div>`;case'columns':return`<div class="columns-block">${block.columns.map(x=>`<section class="column-card">${x.title?`<h3>${esc(x.title)}</h3>`:''}${x.blocks.map(y=>renderBlock(y,design)).join('')}</section>`).join('')}</div>`;case'formula':return`<figure class="formula-block"><figcaption>${esc(block.title)}</figcaption><div>${esc(block.expression)}</div>${block.description?`<p>${esc(block.description)}</p>`:''}</figure>`;case'glossary':return renderGlossary(block.items,'Block glossary');case'divider':return'<hr class="block-divider">';default:return''}}
-function renderObjectives(items){return items.length?`<section class="objectives-section"><h2>Learning objectives</h2><ol>${items.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></section>`:''}
-function renderStats(items){return items.length?`<div class="hero-stats">${items.map(x=>`<div><strong>${esc(x.value)}</strong><span>${esc(x.label)}</span></div>`).join('')}</div>`:''}
-function renderReferences(items){return items.length?`<section class="references-section"><h2>References</h2><ol>${items.map(x=>`<li>${x.id?`<strong>${esc(x.id)}</strong> `:''}${x.url?`<a href="${attr(x.url)}" target="_blank" rel="noopener noreferrer">${esc(x.text)}</a>`:esc(x.text)}</li>`).join('')}</ol></section>`:''}
-function renderGlossary(items,title='Document glossary'){return items.length?`<section class="glossary-block"><h2>${esc(title)}</h2><dl>${items.map(x=>`<div><dt>${esc(x.term)}</dt><dd>${esc(x.definition)}</dd></div>`).join('')}</dl></section>`:''}
-function renderToc(sections){return sections.length?`<nav class="toc" aria-label="Table of contents"><strong>Contents</strong><ol>${sections.map((x,i)=>`<li><a href="#${attr(x.id)}"><span>${pad(i+1)}</span>${esc(x.title)}</a></li>`).join('')}</ol></nav>`:''}
-function showDetails(data){const d=data.document;els.title.textContent=d.title;els.language.textContent=`${d.language} (${d.direction})`;els.sections.textContent=String(d.sections.length);els.blocks.textContent=String(d.sections.reduce((n,s)=>n+count(s.blocks),0));els.details.hidden=false}
-function count(blocks){return blocks.reduce((n,b)=>n+1+(b.type==='columns'?b.columns.reduce((sum,c)=>sum+count(c.blocks),0):0),0)}
-function status(message,type){els.status.textContent=message;els.status.className=`status status-${type}`}
-function stripFence(text){const t=text.trim(),m=t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);return m?m[1]:t}
-function object(x){return Boolean(x)&&typeof x==='object'&&!Array.isArray(x)}function objects(x){return Array.isArray(x)?x.filter(object):[]}function strings(x,required=false){if(!Array.isArray(x)){if(required)throw new Error('Expected an array of strings.');return[]}const out=x.map(str).filter(Boolean);if(required&&!out.length)throw new Error('Expected at least one item.');return out}function str(x){return typeof x==='string'?x.trim():x==null?'':String(x).trim()}function req(x,path){const s=str(x);assert(s,`${path} must be a non-empty string.`);return s}function num(x){return Number.isFinite(x)&&x>=0?x:0}function color(x,fallback){const s=str(x);return /^#[0-9a-f]{3,8}$/i.test(s)?s:fallback}function safeUrl(x){const s=str(x);if(!s)return'';try{const u=new URL(s);return/^https?:$/.test(u.protocol)?u.href:''}catch{return''}}function assert(ok,message){if(!ok)throw new Error(message)}function esc(x){return String(x).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}function attr(x){return esc(x).replaceAll('`','&#096;')}function css(x){return /^#[0-9a-f]{3,8}$/i.test(x)?x:DEFAULT_THEME.accentColor}function pad(n){return String(n).padStart(2,'0')}
-function normalizeAndValidate(input){return normalize(input)}
-function renderHtmlDocument(data,template,designId=selectedDesign()){return render(data,template,designId)}
+function selectDesignCard() {
+  document.querySelectorAll('.design-option').forEach((card) => {
+    card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked));
+  });
+}
+
+function chooseFile(file) {
+  state.selectedFile = file;
+  clearPublication();
+  elements.selectedFileName.textContent = `Selected: ${file.name} (${formatBytes(file.size)})`;
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
+    return;
+  }
+  setStatus(`Selected ${file.name}. Select Build to validate it.`, 'neutral');
+}
+
+async function buildSelectedFile() {
+  const file = state.selectedFile || elements.fileInput.files[0];
+  if (!file) return setStatus('Choose a JSON file first.', 'error');
+  if (!file.name.toLowerCase().endsWith('.json')) return setStatus('The selected file must use the .json extension.', 'error');
+  if (file.size > MAX_UPLOAD_BYTES) return setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
+
+  try {
+    const text = await file.text();
+    state.documentData = LectureRenderer.normalize(JSON.parse(LectureRenderer.stripOptionalCodeFence(text)));
+    clearPublication();
+    updateDocumentDetails(state.documentData);
+    setStatus(`Built ${file.name} successfully. Select Preview to publish and open its permanent link.`, 'success');
+  } catch (error) {
+    state.documentData = null;
+    clearPublication();
+    elements.documentDetails.hidden = true;
+    setStatus(`Build failed: ${error.message}`, 'error');
+  }
+}
+
+async function previewLecture() {
+  const previewWindow = window.open('', '_blank');
+  if (!previewWindow) return setStatus('The preview window was blocked. Allow pop-ups and try again.', 'error');
+  previewWindow.document.write('<!doctype html><title>Loading…</title><p style="font-family:system-ui;padding:24px">Preparing lecture preview…</p>');
+  previewWindow.document.close();
+
+  try {
+    if (!state.documentData) {
+      const template = await loadTemplate(selectedDesignId());
+      const html = LectureRenderer.render(state.exampleData, template, selectedDesignId());
+      previewWindow.document.open();
+      previewWindow.document.write(html);
+      previewWindow.document.close();
+      setStatus(`Opened the example lecture with ${DESIGNS[selectedDesignId()].name}.`, 'success');
+      return;
+    }
+
+    const publication = await publishCurrentLecture();
+    previewWindow.location.replace(publication.url);
+    setStatus(`Published “${state.documentData.document.title}”. Its permanent link is ready to share.`, 'success');
+  } catch (error) {
+    previewWindow.close();
+    setStatus(`Could not publish the preview: ${error.message}`, 'error');
+  }
+}
+
+async function publishCurrentLecture() {
+  const designId = selectedDesignId();
+  if (state.publication?.designId === designId) return state.publication;
+
+  const payload = JSON.stringify(state.documentData);
+  if (new Blob([payload]).size > MAX_UPLOAD_BYTES) throw new Error('The normalized lecture is larger than the 25 MB publishing limit.');
+
+  const response = await fetch('/api/lectures', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Design-Id': designId,
+      'X-Schema-Version': state.documentData.schemaVersion,
+      'X-Lecture-Title': encodeURIComponent(state.documentData.document.title.slice(0, 200))
+    },
+    body: payload
+  });
+  const result = await readJsonResponse(response);
+  if (!response.ok) throw new Error(result.error || 'Publishing failed.');
+
+  state.publication = { id: result.id, url: result.url, designId };
+  elements.copyButton.hidden = false;
+  elements.copyButton.disabled = false;
+  elements.publishedLink.hidden = false;
+  elements.publishedLink.href = result.url;
+  elements.publishedLink.textContent = result.url;
+  return state.publication;
+}
+
+async function copyPublishedLink() {
+  if (!state.publication) return;
+  try {
+    await navigator.clipboard.writeText(state.publication.url);
+    setStatus('Permanent lecture link copied.', 'success');
+  } catch {
+    elements.publishedLink.focus();
+    setStatus('Open the published link below and copy it from the address bar.', 'neutral');
+  }
+}
+
+async function loadTemplate(designId) {
+  if (state.templates.has(designId)) return state.templates.get(designId);
+  const response = await fetch(DESIGNS[designId].templateUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Could not load ${DESIGNS[designId].name}.`);
+  const template = await response.text();
+  state.templates.set(designId, template);
+  return template;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Could not load the example JSON.');
+  return response.json();
+}
+
+function selectedDesignId() {
+  return elements.designInputs.find((input) => input.checked)?.value || 'classic';
+}
+
+function updateDocumentDetails(data) {
+  const documentData = data.document;
+  elements.detailTitle.textContent = documentData.title;
+  elements.detailLanguage.textContent = `${documentData.language} (${documentData.direction})`;
+  elements.detailSections.textContent = String(documentData.sections.length);
+  elements.detailBlocks.textContent = String(documentData.sections.reduce((total, section) => total + LectureRenderer.countBlocks(section.blocks), 0));
+  elements.documentDetails.hidden = false;
+}
+
+function clearPublication() {
+  state.publication = null;
+  elements.copyButton.hidden = true;
+  elements.copyButton.disabled = true;
+  elements.publishedLink.hidden = true;
+  elements.publishedLink.removeAttribute('href');
+  elements.publishedLink.textContent = '';
+}
+
+function setStatus(message, type) {
+  elements.status.textContent = message;
+  elements.status.className = `status status-${type}`;
+}
+
+async function readJsonResponse(response) {
+  try { return await response.json(); } catch { return {}; }
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+}
