@@ -14,4 +14,9 @@ await mkdir(dist, { recursive: true });
 for (const file of files) await cp(resolve(root, file), resolve(dist, file));
 await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: true });
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
-console.log(`Built static assets in ${dist}`);
+
+// Cloudflare Pages Advanced Mode runs a Module Worker placed at dist/_worker.js.
+// Reuse the same API implementation used by the standalone Worker deployment.
+await cp(resolve(root, 'worker/src/index.js'), resolve(dist, '_worker.js'));
+
+console.log(`Built Pages assets and Advanced Mode worker in ${dist}`);
