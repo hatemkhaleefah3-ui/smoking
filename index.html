@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Choose a lecture design, build it from structured JSON, and open a clean standalone preview.">
-  <title>Lecture HTML Builder</title>
+  <meta name="description" content="Build and publish structured lecture JSON as a permanent shareable webpage.">
+  <title>Lecture Publisher</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="lecture-renderer.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -13,8 +14,8 @@
     <div class="shell header-content">
       <div>
         <p class="eyebrow">Reusable lecture publishing</p>
-        <h1>Lecture HTML Builder</h1>
-        <p class="subtitle">Choose from three reusable designs, build a lecture from ChatGPT-formatted JSON, and open the finished lecture in its own page.</p>
+        <h1>Lecture Publisher</h1>
+        <p class="subtitle">Import one lecture JSON file, choose a design, and publish a permanent link that anyone can open later.</p>
       </div>
       <span class="version-badge">Schema v1.0 + v2.1</span>
     </div>
@@ -29,76 +30,42 @@
 
       <fieldset class="design-picker">
         <legend class="sr-only">Lecture design</legend>
-
         <label class="design-option is-selected">
           <input type="radio" name="design" value="classic" checked>
-          <span class="design-thumbnail thumbnail-classic" aria-hidden="true">
-            <span class="thumbnail-hero"></span>
-            <span class="thumbnail-summary"></span>
-            <span class="thumbnail-lines"></span>
-          </span>
-          <span class="design-copy">
-            <span class="design-name">Classic Academic</span>
-            <span class="design-description">A clean, print-friendly academic page with a bold header, summary panel, callouts, tables, and code blocks.</span>
-          </span>
+          <span class="design-thumbnail thumbnail-classic" aria-hidden="true"><span class="thumbnail-hero"></span><span class="thumbnail-summary"></span><span class="thumbnail-lines"></span></span>
+          <span class="design-copy"><span class="design-name">Classic Academic</span><span class="design-description">Clean, print-friendly academic reading.</span></span>
           <span class="selection-badge">Selected</span>
         </label>
-
         <label class="design-option">
           <input type="radio" name="design" value="enhanced">
-          <span class="design-thumbnail thumbnail-enhanced" aria-hidden="true">
-            <span class="thumbnail-sidebar"></span>
-            <span class="thumbnail-page">
-              <span class="thumbnail-hero"></span>
-              <span class="thumbnail-tags"></span>
-              <span class="thumbnail-lines"></span>
-            </span>
-          </span>
-          <span class="design-copy">
-            <span class="design-name">Enhanced Modern</span>
-            <span class="design-description">A modern dashboard-style lecture with a sidebar table of contents, statistics, objectives, and rich content blocks.</span>
-          </span>
+          <span class="design-thumbnail thumbnail-enhanced" aria-hidden="true"><span class="thumbnail-sidebar"></span><span class="thumbnail-page"><span class="thumbnail-hero"></span><span class="thumbnail-tags"></span><span class="thumbnail-lines"></span></span></span>
+          <span class="design-copy"><span class="design-name">Enhanced Modern</span><span class="design-description">Sidebar navigation, statistics and rich blocks.</span></span>
           <span class="selection-badge">Selected</span>
         </label>
-
         <label class="design-option">
           <input type="radio" name="design" value="editorial">
-          <span class="design-thumbnail thumbnail-editorial" aria-hidden="true">
-            <span class="thumbnail-masthead"></span>
-            <span class="thumbnail-editorial-title"></span>
-            <span class="thumbnail-editorial-rule"></span>
-            <span class="thumbnail-columns"></span>
-          </span>
-          <span class="design-copy">
-            <span class="design-name">Editorial Journal</span>
-            <span class="design-description">A refined magazine-inspired reading experience with editorial typography, a compact contents menu, and decorative section numbers.</span>
-          </span>
+          <span class="design-thumbnail thumbnail-editorial" aria-hidden="true"><span class="thumbnail-masthead"></span><span class="thumbnail-editorial-title"></span><span class="thumbnail-editorial-rule"></span><span class="thumbnail-columns"></span></span>
+          <span class="design-copy"><span class="design-name">Editorial Journal</span><span class="design-description">Magazine-inspired typography and section numbering.</span></span>
           <span class="selection-badge">Selected</span>
         </label>
       </fieldset>
 
-      <div class="import-heading">
-        <p class="step-label">Step 2</p>
-        <h2>Choose lecture JSON</h2>
-      </div>
-
+      <div class="import-heading"><p class="step-label">Step 2</p><h2>Choose lecture JSON</h2></div>
       <label id="drop-zone" class="drop-zone" for="file-input">
         <span class="drop-icon" aria-hidden="true">↥</span>
         <span class="drop-title">Choose or drop a JSON file</span>
-        <span id="selected-file-name" class="drop-help">Use the JSON file produced by ChatGPT from the shared example format.</span>
+        <span id="selected-file-name" class="drop-help">Maximum published JSON size: 25 MB.</span>
         <input id="file-input" type="file" accept="application/json,.json">
       </label>
 
       <div class="button-row">
         <button id="build-button" class="button button-primary" type="button">Build</button>
-        <button id="preview-button" class="button button-secondary" type="button" disabled>Preview</button>
+        <button id="preview-button" class="button button-secondary" type="button" disabled>Preview &amp; publish</button>
+        <button id="copy-link-button" class="button button-secondary" type="button" hidden disabled>Copy link</button>
       </div>
-
-      <p class="preview-help">Preview opens the chosen design in a new page. Before you build a file, it uses the included example lecture.</p>
-
-      <div id="status" class="status status-neutral" role="status" aria-live="polite">
-        Loading the designs and example lecture…
-      </div>
+      <p class="preview-help">After Build, Preview publishes the imported lecture and opens its permanent public URL. Before Build, it opens the example without saving it.</p>
+      <a id="published-link" class="published-link" hidden target="_blank" rel="noopener noreferrer"></a>
+      <div id="status" class="status status-neutral" role="status" aria-live="polite">Loading the designs and example lecture…</div>
 
       <div id="document-details" class="document-details" hidden>
         <h3>Built lecture</h3>
@@ -112,24 +79,18 @@
     </section>
 
     <aside class="panel workflow-panel" aria-labelledby="workflow-title">
-      <p class="step-label">How it works</p>
-      <h2 id="workflow-title">Build and preview</h2>
+      <p class="step-label">Shareable workflow</p>
+      <h2 id="workflow-title">Build, publish and share</h2>
       <ol class="workflow-list">
-        <li>Select one of the three lecture designs.</li>
-        <li>Choose the JSON file created from your lecture.</li>
-        <li>Select <strong>Build</strong> to validate and prepare the lecture.</li>
-        <li>Select <strong>Preview</strong> to open only the finished lecture in a new page.</li>
-        <li>Switch designs at any time; the same built JSON works across all options.</li>
+        <li>Choose the JSON file and select <strong>Build</strong>.</li>
+        <li>Select a design and choose <strong>Preview &amp; publish</strong>.</li>
+        <li>Copy the permanent URL from the new page or the Copy link button.</li>
+        <li>Send it to anyone. The same link loads the saved lecture whenever it is opened.</li>
       </ol>
-      <div class="example-note">
-        <strong>No file yet?</strong>
-        <span>Preview uses the included schema v2.1 example until you build your own JSON file.</span>
-      </div>
+      <div class="example-note"><strong>Administration</strong><span>Stored links and storage cleanup are available at <code>/admin</code>.</span></div>
     </aside>
   </main>
 
-  <footer class="site-footer">
-    <div class="shell">Everything runs locally in your browser. Imported files are not uploaded by this page.</div>
-  </footer>
+  <footer class="site-footer"><div class="shell">Lecture JSON is stored privately in Cloudflare R2. Public links are served through the application API.</div></footer>
 </body>
 </html>
