@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="styles.css">
   <script src="lecture-renderer.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="pdf-extractor.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -90,6 +91,41 @@
       <div class="example-note"><strong>Administration</strong><span>Stored links and storage cleanup are available at <code>/admin</code>.</span></div>
     </aside>
   </main>
+
+  <section class="shell pdf-extractor-shell" aria-labelledby="pdf-extractor-title">
+    <div class="panel pdf-extractor-panel">
+      <div class="pdf-extractor-heading">
+        <div>
+          <p class="step-label">PDF utility</p>
+          <h2 id="pdf-extractor-title">Extract PDF Images</h2>
+        </div>
+        <p>Import a PDF and download its embedded images directly. This works without accessibility or document-structure tags.</p>
+      </div>
+
+      <div class="pdf-extractor-grid">
+        <label id="pdf-drop-zone" class="drop-zone pdf-drop-zone" for="pdf-file-input">
+          <span class="drop-icon" aria-hidden="true">↥</span>
+          <span class="drop-title">Import PDF</span>
+          <span id="pdf-selected-file-name" class="drop-help">Choose or drop a PDF file. Maximum size: 25 MB.</span>
+          <input id="pdf-file-input" type="file" accept="application/pdf,.pdf">
+        </label>
+
+        <div class="pdf-selector-panel">
+          <label for="pdf-images-json">Optional image selection JSON</label>
+          <p>Leave empty to extract every embedded image. Page and position values are one-based.</p>
+          <textarea id="pdf-images-json" rows="9" spellcheck="false" placeholder='{"images":[{"page":1,"position":1},{"page":3,"position":2}]}'></textarea>
+        </div>
+      </div>
+
+      <div class="button-row pdf-action-row">
+        <button id="pdf-extract-button" class="button button-primary pdf-extract-button" type="button" aria-busy="false">
+          <span class="button-spinner" aria-hidden="true"></span>
+          <span class="button-label">Extract</span>
+        </button>
+      </div>
+      <div id="pdf-extraction-status" class="status status-neutral" role="status" aria-live="polite">Choose a PDF to begin.</div>
+    </div>
+  </section>
 
   <footer class="site-footer"><div class="shell">Lecture JSON is stored privately in Cloudflare R2. Public links are served through the application API.</div></footer>
 </body>
