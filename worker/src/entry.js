@@ -1,5 +1,6 @@
 import lectureWorker from './index.js';
 import { createPdfExtraction, downloadPdfExtraction } from './pdf-extractor.js';
+import { configureMupdfAssets } from './mupdf-loader.js';
 import { ensurePdfExtractionSchema } from './pdf-schema.js';
 
 export default {
@@ -10,6 +11,7 @@ export default {
       if (url.pathname === '/api/pdf-extractions' && request.method === 'POST') {
         assertSameOrigin(request, url);
         requirePdfExtractionStorage(env);
+        configureMupdfAssets(env.ASSETS);
         await ensurePdfExtractionSchema(env, HttpError);
         return createPdfExtraction(request, env, url, { HttpError, json });
       }
