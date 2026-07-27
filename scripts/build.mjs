@@ -28,4 +28,8 @@ if (pagesWorker === workerSource) {
 
 await writeFile(resolve(dist, '_worker.js'), pagesWorker);
 
-console.log(`Built Pages assets and Advanced Mode worker in ${dist}`);
+// A second Cloudflare Workers build is connected to the same repository. Wrangler
+// must not publish the Pages server module as a public static asset.
+await writeFile(resolve(dist, '.assetsignore'), '_worker.js\n');
+
+console.log(`Built Pages assets and dual-deployment safeguards in ${dist}`);
