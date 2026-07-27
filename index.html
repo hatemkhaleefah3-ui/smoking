@@ -14,35 +14,66 @@
       <div>
         <p class="eyebrow">Reusable lecture publishing</p>
         <h1>Lecture HTML Builder</h1>
-        <p class="subtitle">Choose a design, build a lecture from ChatGPT-formatted JSON, and open the finished lecture in its own page.</p>
+        <p class="subtitle">Choose from three reusable designs, build a lecture from ChatGPT-formatted JSON, and open the finished lecture in its own page.</p>
       </div>
-      <span class="version-badge">Schema v1.0</span>
+      <span class="version-badge">Schema v1.0 + v2.1</span>
     </div>
   </header>
 
   <main class="shell app-layout">
     <section class="panel builder-panel" aria-labelledby="builder-title">
       <div class="section-heading">
-        <div>
-          <p class="step-label">Step 1</p>
-          <h2 id="builder-title">Choose a design</h2>
-        </div>
+        <p class="step-label">Step 1</p>
+        <h2 id="builder-title">Choose a design</h2>
       </div>
 
       <fieldset class="design-picker">
         <legend class="sr-only">Lecture design</legend>
-        <label class="design-option">
+
+        <label class="design-option is-selected">
           <input type="radio" name="design" value="classic" checked>
-          <span class="design-thumbnail" aria-hidden="true">
+          <span class="design-thumbnail thumbnail-classic" aria-hidden="true">
             <span class="thumbnail-hero"></span>
             <span class="thumbnail-summary"></span>
             <span class="thumbnail-lines"></span>
           </span>
           <span class="design-copy">
             <span class="design-name">Classic Academic</span>
-            <span class="design-description">A polished reading layout with a bold header, summary panel, callouts, tables, and print-friendly styling.</span>
+            <span class="design-description">A clean, print-friendly academic page with a bold header, summary panel, callouts, tables, and code blocks.</span>
           </span>
-          <span class="current-badge">Current design</span>
+          <span class="selection-badge">Selected</span>
+        </label>
+
+        <label class="design-option">
+          <input type="radio" name="design" value="enhanced">
+          <span class="design-thumbnail thumbnail-enhanced" aria-hidden="true">
+            <span class="thumbnail-sidebar"></span>
+            <span class="thumbnail-page">
+              <span class="thumbnail-hero"></span>
+              <span class="thumbnail-tags"></span>
+              <span class="thumbnail-lines"></span>
+            </span>
+          </span>
+          <span class="design-copy">
+            <span class="design-name">Enhanced Modern</span>
+            <span class="design-description">A modern dashboard-style lecture with a sidebar table of contents, statistics, objectives, and rich content blocks.</span>
+          </span>
+          <span class="selection-badge">Selected</span>
+        </label>
+
+        <label class="design-option">
+          <input type="radio" name="design" value="editorial">
+          <span class="design-thumbnail thumbnail-editorial" aria-hidden="true">
+            <span class="thumbnail-masthead"></span>
+            <span class="thumbnail-editorial-title"></span>
+            <span class="thumbnail-editorial-rule"></span>
+            <span class="thumbnail-columns"></span>
+          </span>
+          <span class="design-copy">
+            <span class="design-name">Editorial Journal</span>
+            <span class="design-description">A refined magazine-inspired reading experience with editorial typography, a compact contents menu, and decorative section numbers.</span>
+          </span>
+          <span class="selection-badge">Selected</span>
         </label>
       </fieldset>
 
@@ -54,7 +85,7 @@
       <label id="drop-zone" class="drop-zone" for="file-input">
         <span class="drop-icon" aria-hidden="true">↥</span>
         <span class="drop-title">Choose or drop a JSON file</span>
-        <span id="selected-file-name" class="drop-help">Use the JSON file produced by ChatGPT.</span>
+        <span id="selected-file-name" class="drop-help">Use the JSON file produced by ChatGPT from the shared example format.</span>
         <input id="file-input" type="file" accept="application/json,.json">
       </label>
 
@@ -63,10 +94,10 @@
         <button id="preview-button" class="button button-secondary" type="button" disabled>Preview</button>
       </div>
 
-      <p class="preview-help">Preview opens the selected design in a new page. Before you build a file, it opens the example lecture.</p>
+      <p class="preview-help">Preview opens the chosen design in a new page. Before you build a file, it uses the included example lecture.</p>
 
       <div id="status" class="status status-neutral" role="status" aria-live="polite">
-        Loading the design and example lecture…
+        Loading the designs and example lecture…
       </div>
 
       <div id="document-details" class="document-details" hidden>
@@ -84,14 +115,15 @@
       <p class="step-label">How it works</p>
       <h2 id="workflow-title">Build and preview</h2>
       <ol class="workflow-list">
-        <li>Select a lecture design.</li>
+        <li>Select one of the three lecture designs.</li>
         <li>Choose the JSON file created from your lecture.</li>
         <li>Select <strong>Build</strong> to validate and prepare the lecture.</li>
         <li>Select <strong>Preview</strong> to open only the finished lecture in a new page.</li>
+        <li>Switch designs at any time; the same built JSON works across all options.</li>
       </ol>
       <div class="example-note">
         <strong>No file yet?</strong>
-        <span>Preview uses the included example lecture until you build your own JSON file.</span>
+        <span>Preview uses the included schema v2.1 example until you build your own JSON file.</span>
       </div>
     </aside>
   </main>
