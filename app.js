@@ -1,30 +1,34 @@
 'use strict';
 
-const TEMPLATE_URL = 'templates/lecture-template.html';
+const DESIGNS = {
+  classic: {
+    name: 'Classic Academic',
+    templateUrl: 'templates/lecture-template.html'
+  }
+};
 const EXAMPLE_URL = 'examples/lecture-output.example.json';
 const SUPPORTED_SCHEMA_VERSION = '1.0';
 const RTL_LANGUAGES = new Set(['ar', 'fa', 'he', 'ur', 'ps', 'sd', 'ug', 'yi']);
 
 const elements = {
   fileInput: document.querySelector('#file-input'),
-  importButton: document.querySelector('#import-button'),
-  loadExampleButton: document.querySelector('#load-example-button'),
-  downloadHtmlButton: document.querySelector('#download-html-button'),
-  downloadJsonButton: document.querySelector('#download-json-button'),
+  buildButton: document.querySelector('#build-button'),
+  previewButton: document.querySelector('#preview-button'),
   dropZone: document.querySelector('#drop-zone'),
+  selectedFileName: document.querySelector('#selected-file-name'),
   status: document.querySelector('#status'),
-  previewFrame: document.querySelector('#preview-frame'),
-  previewPlaceholder: document.querySelector('#preview-placeholder'),
-  previewState: document.querySelector('#preview-state'),
   documentDetails: document.querySelector('#document-details'),
   detailTitle: document.querySelector('#detail-title'),
   detailLanguage: document.querySelector('#detail-language'),
   detailSections: document.querySelector('#detail-sections'),
-  detailBlocks: document.querySelector('#detail-blocks')
+  detailBlocks: document.querySelector('#detail-blocks'),
+  designInputs: [...document.querySelectorAll('input[name="design"]')]
 };
 
 const state = {
-  template: '',
+  templates: new Map(),
+  exampleData: null,
+  selectedFile: null,
   documentData: null,
   generatedHtml: ''
 };
@@ -35,16 +39,18 @@ async function initialize() {
   bindEvents();
 
   try {
-    const response = await fetch(TEMPLATE_URL, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Template request failed with status ${response.status}.`);
-    }
+    const [template, example] = await Promise.all([
+      loadTemplate(getSelectedDesignId()),
+      loadExampleData()
+    ]);
 
-    state.template = await response.text();
-    setStatus('Template loaded. Choose a lecture JSON file to begin.', 'success');
+    state.templates.set(getSelectedDesignId(), template);
+    state.exampleData = normalizeAndValidate(example);
+    elements.previewButton.disabled = false;
+    setStatus('Ready. Preview the example or choose a JSON file and select Build.', 'success');
   } catch (error) {
     setStatus(
-      'Could not load the reusable template. Serve this repository through a web server or GitHub Pages instead of opening index.html directly.',
+      'Could not load the design or example lecture. Serve this repository through a web server or GitHub Pages instead of opening index.html directly.',
       'error'
     );
     console.error(error);
@@ -52,17 +58,25 @@ async function initialize() {
 }
 
 function bindEvents() {
-  elements.importButton.addEventListener('click', importSelectedFile);
+  elements.buildButton.addEventListener('click', buildSelectedFile);
+  elements.previewButton.addEventListener('click', previewSelectedDesign);
+
   elements.fileInput.addEventListener('change', () => {
     const file = elements.fileInput.files[0];
-    if (file) {
-      setStatus(`Selected ${file.name}. Click “Import selected file” to process it.`, 'neutral');
-    }
+    if (file) selectFile(file);
   });
 
-  elements.loadExampleButton.addEventListener('click', loadExample);
-  elements.downloadHtmlButton.addEventListener('click', downloadGeneratedHtml);
-  elements.downloadJsonButton.addEventListener('click', downloadNormalizedJson);
+  elements.designInputs.forEach((input) => {
+    input.addEventListener('change', async () => {
+      try {
+        await loadTemplate(input.value);
+        state.generatedHtml = '';
+        setStatus(`Selected ${DESIGNS[input.value].name}. Preview will use this design.`, 'success');
+      } catch (error) {
+        setStatus(`Could not load the selected design: ${error.message}`, 'error');
+      }
+    });
+  });
 
   for (const eventName of ['dragenter', 'dragover']) {
     elements.dropZone.addEventListener(eventName, (event) => {
@@ -80,13 +94,18 @@ function bindEvents() {
 
   elements.dropZone.addEventListener('drop', (event) => {
     const file = event.dataTransfer.files[0];
-    if (!file) return;
-    processFile(file);
+    if (file) selectFile(file);
   });
 }
 
-async function importSelectedFile() {
-  const file = elements.fileInput.files[0];
+function selectFile(file) {
+  state.selectedFile = file;
+  elements.selectedFileName.textContent = `Selected: ${file.name}`;
+  setStatus(`Selected ${file.name}. Select Build to validate and prepare it.`, 'neutral');
+}
+
+async function buildSelectedFile() {
+  const file = state.selectedFile || elements.fileInput.files[0];
   if (!file) {
     setStatus('Choose a JSON file first.', 'error');
     return;
@@ -97,54 +116,93 @@ async function importSelectedFile() {
 
 async function processFile(file) {
   if (!file.name.toLowerCase().endsWith('.json')) {
-    setStatus('The imported file must use the .json extension.', 'error');
+    clearDocumentState();
+    setStatus('The selected file must use the .json extension.', 'error');
     return;
   }
 
   try {
     const text = await file.text();
     const parsed = JSON.parse(stripOptionalCodeFence(text));
-    processDocument(parsed, file.name);
+    await processDocument(parsed, file.name);
   } catch (error) {
     clearDocumentState();
-    setStatus(`Import failed: ${error.message}`, 'error');
+    setStatus(`Build failed: ${error.message}`, 'error');
   }
 }
 
-async function loadExample() {
-  try {
-    const response = await fetch(EXAMPLE_URL, { cache: 'no-store' });
-    if (!response.ok) {
-      throw new Error(`Example request failed with status ${response.status}.`);
-    }
-
-    const parsed = await response.json();
-    processDocument(parsed, 'lecture-output.example.json');
-  } catch (error) {
-    clearDocumentState();
-    setStatus(`Could not load the example: ${error.message}`, 'error');
-  }
-}
-
-function processDocument(input, sourceName) {
-  if (!state.template) {
-    throw new Error('The reusable HTML template is not available.');
-  }
-
+async function processDocument(input, sourceName) {
   const normalized = normalizeAndValidate(input);
-  const generatedHtml = renderHtmlDocument(normalized);
+  const template = await loadTemplate(getSelectedDesignId());
+  const generatedHtml = renderHtmlDocument(normalized, template);
 
   state.documentData = normalized;
   state.generatedHtml = generatedHtml;
-
-  elements.previewFrame.srcdoc = generatedHtml;
-  elements.previewPlaceholder.hidden = true;
-  elements.downloadHtmlButton.disabled = false;
-  elements.downloadJsonButton.disabled = false;
-  elements.previewState.textContent = 'Preview ready';
-
   updateDocumentDetails(normalized);
-  setStatus(`Imported ${sourceName} successfully. The HTML export is ready.`, 'success');
+  setStatus(`Built ${sourceName} successfully. Select Preview to open the lecture page.`, 'success');
+}
+
+async function previewSelectedDesign() {
+  const previewWindow = window.open('', '_blank');
+  if (!previewWindow) {
+    setStatus('The preview window was blocked. Allow pop-ups for this site and try again.', 'error');
+    return;
+  }
+
+  previewWindow.document.open();
+  previewWindow.document.write('<!doctype html><title>Loading preview…</title><p style="font-family:system-ui;padding:24px">Loading lecture preview…</p>');
+  previewWindow.document.close();
+
+  try {
+    const designId = getSelectedDesignId();
+    const template = await loadTemplate(designId);
+    const data = state.documentData || state.exampleData;
+    assert(data, 'The example lecture is not available yet.');
+
+    const html = state.documentData && state.generatedHtml
+      ? state.generatedHtml
+      : renderHtmlDocument(data, template);
+
+    previewWindow.document.open();
+    previewWindow.document.write(html);
+    previewWindow.document.close();
+
+    const sourceLabel = state.documentData ? 'built lecture' : 'example lecture';
+    setStatus(`Opened the ${sourceLabel} with the ${DESIGNS[designId].name} design.`, 'success');
+  } catch (error) {
+    previewWindow.close();
+    setStatus(`Could not open the preview: ${error.message}`, 'error');
+  }
+}
+
+async function loadTemplate(designId) {
+  const design = DESIGNS[designId];
+  assert(design, `Design "${designId}" is not supported.`);
+
+  if (state.templates.has(designId)) {
+    return state.templates.get(designId);
+  }
+
+  const response = await fetch(design.templateUrl, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Template request failed with status ${response.status}.`);
+  }
+
+  const template = await response.text();
+  state.templates.set(designId, template);
+  return template;
+}
+
+async function loadExampleData() {
+  const response = await fetch(EXAMPLE_URL, { cache: 'no-store' });
+  if (!response.ok) {
+    throw new Error(`Example request failed with status ${response.status}.`);
+  }
+  return response.json();
+}
+
+function getSelectedDesignId() {
+  return elements.designInputs.find((input) => input.checked)?.value || 'classic';
 }
 
 function normalizeAndValidate(input) {
@@ -262,7 +320,7 @@ function normalizeBlock(block, path) {
   }
 }
 
-function renderHtmlDocument(data) {
+function renderHtmlDocument(data, template) {
   const documentData = data.document;
   const metadata = [
     ['Lecture', documentData.lectureNumber],
@@ -294,7 +352,7 @@ function renderHtmlDocument(data) {
     GENERATED_AT: escapeHtml(new Date().toISOString().slice(0, 10))
   };
 
-  return replaceTemplateTokens(state.template, replacements);
+  return replaceTemplateTokens(template, replacements);
 }
 
 function renderSection(section) {
@@ -354,30 +412,6 @@ function updateDocumentDetails(data) {
   elements.documentDetails.hidden = false;
 }
 
-function downloadGeneratedHtml() {
-  if (!state.generatedHtml || !state.documentData) return;
-  const filename = `${slugify(state.documentData.document.title) || 'lecture'}.html`;
-  downloadText(filename, state.generatedHtml, 'text/html;charset=utf-8');
-}
-
-function downloadNormalizedJson() {
-  if (!state.documentData) return;
-  const filename = `${slugify(state.documentData.document.title) || 'lecture'}.json`;
-  downloadText(filename, `${JSON.stringify(state.documentData, null, 2)}\n`, 'application/json;charset=utf-8');
-}
-
-function downloadText(filename, content, mimeType) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 function stripOptionalCodeFence(text) {
   const trimmed = text.trim();
   const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
@@ -387,11 +421,6 @@ function stripOptionalCodeFence(text) {
 function clearDocumentState() {
   state.documentData = null;
   state.generatedHtml = '';
-  elements.previewFrame.removeAttribute('srcdoc');
-  elements.previewPlaceholder.hidden = false;
-  elements.downloadHtmlButton.disabled = true;
-  elements.downloadJsonButton.disabled = true;
-  elements.previewState.textContent = 'No document loaded';
   elements.documentDetails.hidden = true;
 }
 
