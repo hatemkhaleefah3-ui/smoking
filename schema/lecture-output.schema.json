@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schema/lecture-output.schema.json",
+  "title": "Lecture HTML Builder input",
+  "description": "The strict JSON format consumed by the Lecture HTML Builder.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "document"],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "language",
+        "direction",
+        "course",
+        "lectureNumber",
+        "lecturer",
+        "date",
+        "summary",
+        "keywords",
+        "sections"
+      ],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 2, "maxLength": 35 },
+        "direction": { "enum": ["ltr", "rtl", "auto"] },
+        "course": { "type": "string" },
+        "lectureNumber": { "type": "string" },
+        "lecturer": { "type": "string" },
+        "date": { "type": "string" },
+        "summary": { "type": "string" },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/section" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "blocks"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/paragraph" },
+              { "$ref": "#/$defs/heading" },
+              { "$ref": "#/$defs/list" },
+              { "$ref": "#/$defs/quote" },
+              { "$ref": "#/$defs/callout" },
+              { "$ref": "#/$defs/table" },
+              { "$ref": "#/$defs/code" }
+            ]
+          }
+        }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "paragraph" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "heading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "level", "text"],
+      "properties": {
+        "type": { "const": "heading" },
+        "level": { "enum": [3, 4] },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "list": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "style", "items"],
+      "properties": {
+        "type": { "const": "list" },
+        "style": { "enum": ["unordered", "ordered"] },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "quote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text", "attribution"],
+      "properties": {
+        "type": { "const": "quote" },
+        "text": { "type": "string", "minLength": 1 },
+        "attribution": { "type": "string" }
+      }
+    },
+    "callout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "tone", "title", "text"],
+      "properties": {
+        "type": { "const": "callout" },
+        "tone": { "enum": ["note", "important", "warning", "definition"] },
+        "title": { "type": "string" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "headers", "rows"],
+      "properties": {
+        "type": { "const": "table" },
+        "headers": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "language", "code"],
+      "properties": {
+        "type": { "const": "code" },
+        "language": { "type": "string" },
+        "code": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

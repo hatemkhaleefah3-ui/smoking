@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "1.0",
+  "document": {
+    "title": "Foundations of Public Health Communication",
+    "language": "en",
+    "direction": "ltr",
+    "course": "Public Health 101",
+    "lectureNumber": "Lecture 4",
+    "lecturer": "Dr. Example",
+    "date": "2026-07-27",
+    "summary": "This lecture explains how audience, message design, and delivery channels shape effective public health communication.",
+    "keywords": [
+      "public health",
+      "communication",
+      "audience",
+      "message design"
+    ],
+    "sections": [
+      {
+        "id": "communication-basics",
+        "title": "Communication basics",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "Public health communication translates evidence into messages that people can understand and use. Its purpose is not only to transfer information, but also to support informed decisions."
+          },
+          {
+            "type": "callout",
+            "tone": "definition",
+            "title": "Key definition",
+            "text": "A target audience is the specific group a message is designed to reach and influence."
+          },
+          {
+            "type": "heading",
+            "level": 3,
+            "text": "Three practical questions"
+          },
+          {
+            "type": "list",
+            "style": "ordered",
+            "items": [
+              "Who needs this information?",
+              "What should they understand or do?",
+              "Which channel can reach them effectively?"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "message-design",
+        "title": "Message design",
+        "blocks": [
+          {
+            "type": "paragraph",
+            "text": "Effective messages are accurate, focused, actionable, and appropriate for the audience's language and context."
+          },
+          {
+            "type": "table",
+            "headers": ["Principle", "Meaning"],
+            "rows": [
+              ["Clarity", "Use direct language and explain unfamiliar terms."],
+              ["Relevance", "Connect the message to the audience's needs."],
+              ["Actionability", "State the next step people can take."]
+            ]
+          },
+          {
+            "type": "callout",
+            "tone": "important",
+            "title": "Remember",
+            "text": "Do not add certainty that is not present in the evidence. Communicate limits and uncertainty honestly."
+          }
+        ]
+      }
+    ]
+  }
+}

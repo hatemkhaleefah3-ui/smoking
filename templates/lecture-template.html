@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="{{LANGUAGE}}" dir="{{DIRECTION}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="{{META_DESCRIPTION}}">
+  <title>{{DOCUMENT_TITLE}}</title>
+  <style>
+    :root {
+      --ink: #1c2333;
+      --muted: #667085;
+      --paper: #ffffff;
+      --canvas: #f2f5fa;
+      --accent: #3459d1;
+      --accent-soft: #edf1ff;
+      --line: #d9dfeb;
+      --note: #eaf7f1;
+      --important: #fff5d9;
+      --warning: #ffe8e8;
+      --definition: #f0eaff;
+      font-family: Georgia, "Times New Roman", serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-size: 17px;
+      line-height: 1.75;
+    }
+
+    .document {
+      width: min(920px, calc(100% - 32px));
+      margin: 36px auto;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 24px 70px rgba(31, 43, 72, 0.12);
+      overflow: hidden;
+    }
+
+    .hero {
+      padding: clamp(30px, 6vw, 64px);
+      color: white;
+      background: linear-gradient(135deg, #172554, #3459d1);
+    }
+
+    .course-label {
+      margin: 0 0 12px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.82;
+    }
+
+    h1, h2, h3, h4 {
+      line-height: 1.22;
+      text-wrap: balance;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(2.25rem, 7vw, 4.5rem);
+      letter-spacing: -0.045em;
+    }
+
+    .meta-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 22px;
+      margin-top: 24px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.91rem;
+      opacity: 0.92;
+    }
+
+    .summary {
+      padding: 28px clamp(24px, 6vw, 64px);
+      border-bottom: 1px solid var(--line);
+      background: var(--accent-soft);
+    }
+
+    .summary strong {
+      display: block;
+      margin-bottom: 6px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .summary p { margin: 0; }
+
+    .content {
+      padding: clamp(28px, 6vw, 64px);
+    }
+
+    .lecture-section + .lecture-section {
+      margin-top: 54px;
+      padding-top: 44px;
+      border-top: 1px solid var(--line);
+    }
+
+    .lecture-section > h2 {
+      margin: 0 0 24px;
+      color: #172554;
+      font-size: clamp(1.65rem, 4vw, 2.35rem);
+      letter-spacing: -0.025em;
+    }
+
+    .content h3 { margin: 32px 0 12px; font-size: 1.42rem; }
+    .content h4 { margin: 26px 0 10px; font-size: 1.16rem; }
+    .content p { margin: 0 0 18px; }
+    .content ul, .content ol { margin: 0 0 22px; padding-inline-start: 1.4em; }
+    .content li + li { margin-top: 7px; }
+
+    blockquote {
+      margin: 26px 0;
+      padding: 4px 0 4px 22px;
+      border-inline-start: 4px solid var(--accent);
+      color: #344054;
+      font-size: 1.1rem;
+      font-style: italic;
+    }
+
+    blockquote cite {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.85rem;
+      font-style: normal;
+    }
+
+    .callout {
+      margin: 26px 0;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+
+    .callout-note { background: var(--note); }
+    .callout-important { background: var(--important); }
+    .callout-warning { background: var(--warning); }
+    .callout-definition { background: var(--definition); }
+
+    .callout-title {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 800;
+    }
+
+    .table-wrap {
+      margin: 28px 0;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: start;
+      vertical-align: top;
+    }
+
+    th { background: #f6f8fc; }
+    tr:last-child td { border-bottom: 0; }
+
+    pre {
+      margin: 26px 0;
+      padding: 18px;
+      overflow-x: auto;
+      border-radius: 11px;
+      color: #e6edf7;
+      background: #111827;
+      direction: ltr;
+      text-align: left;
+      tab-size: 2;
+    }
+
+    pre code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+      line-height: 1.6;
+    }
+
+    .footer {
+      padding: 22px clamp(24px, 6vw, 64px);
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      background: #f8f9fc;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      font-size: 0.78rem;
+    }
+
+    @media (max-width: 640px) {
+      body { font-size: 16px; }
+      .document { width: 100%; margin: 0; border: 0; border-radius: 0; }
+    }
+
+    @media print {
+      body { background: white; }
+      .document { width: 100%; margin: 0; border: 0; box-shadow: none; }
+      .hero { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .lecture-section { break-inside: avoid-page; }
+      a { color: inherit; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <article class="document">
+    <header class="hero">
+      <p class="course-label">{{COURSE_LABEL}}</p>
+      <h1>{{LECTURE_TITLE}}</h1>
+      <div class="meta-grid">{{METADATA}}</div>
+    </header>
+    {{SUMMARY_SECTION}}
+    <main class="content">{{CONTENT}}</main>
+    <footer class="footer">Generated from structured lecture data on {{GENERATED_AT}}.</footer>
+  </article>
+</body>
+</html>
