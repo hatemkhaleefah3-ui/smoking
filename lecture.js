@@ -4,7 +4,8 @@ const DESIGNS = {
   classic: 'templates/lecture-template.html',
   enhanced: 'templates/lecture-template-enhanced.html',
   editorial: 'templates/lecture-template-editorial.html',
-  clinical: 'templates/lecture-template-clinical.html'
+  clinical: 'templates/lecture-template-clinical.html',
+  integrated: 'templates/lecture-template-integrated.html'
 };
 
 loadPublishedLecture();
@@ -19,7 +20,10 @@ async function loadPublishedLecture() {
     if (!response.ok) throw new Error('The lecture service returned an error.');
 
     const storedData = await response.json();
-    const designId = storedData?._design === 'clinical' ? 'clinical' : response.headers.get('X-Design-Id') || 'classic';
+    const declaredDesign = typeof storedData?._design === 'string' ? storedData._design : '';
+    const designId = DESIGNS[declaredDesign]
+      ? declaredDesign
+      : response.headers.get('X-Design-Id') || 'classic';
     if (!DESIGNS[designId]) throw new Error('The saved lecture uses an unsupported design.');
     const data = LectureRenderer.normalize(storedData);
     const templateResponse = await fetch(`/${DESIGNS[designId]}`, { cache: 'no-store' });
