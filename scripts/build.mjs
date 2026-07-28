@@ -7,7 +7,8 @@ import { writeIntegratedAssets } from './integrated-assets.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 const files = [
-  'index.html', 'styles.css', 'app.js', 'lecture-renderer.js', 'clinical-v2-adapter.js',
+  'index.html', 'styles.css', 'image-import.css', 'app.js', 'image-import.js',
+  'lecture-renderer.js', 'clinical-v2-adapter.js',
   'smart-media-search.css', 'smart-media-search.js',
   'lecture.html', 'lecture.js', 'admin.html', 'admin.css', 'admin.js', '404.html'
 ];
