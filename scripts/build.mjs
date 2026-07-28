@@ -2,6 +2,7 @@ import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { writeIntegratedAssets } from './integrated-assets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -16,6 +17,7 @@ await mkdir(dist, { recursive: true });
 for (const file of files) await cp(resolve(root, file), resolve(dist, file));
 await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: true });
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
+await writeIntegratedAssets(root, dist);
 
 // Pages Advanced Mode ignores /functions and deploys dist/_worker.js. Bundle the
 // complete router and its dependencies into that one file so no sibling Worker
