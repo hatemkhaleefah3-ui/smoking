@@ -3,7 +3,8 @@
 const DESIGNS = {
   classic: 'templates/lecture-template.html',
   enhanced: 'templates/lecture-template-enhanced.html',
-  editorial: 'templates/lecture-template-editorial.html'
+  editorial: 'templates/lecture-template-editorial.html',
+  clinical: 'templates/lecture-template-clinical.html'
 };
 
 loadPublishedLecture();
@@ -17,9 +18,10 @@ async function loadPublishedLecture() {
     if (response.status === 404) return showError('Lecture unavailable', 'This lecture link has been removed or does not exist.');
     if (!response.ok) throw new Error('The lecture service returned an error.');
 
-    const designId = response.headers.get('X-Design-Id') || 'classic';
+    const storedData = await response.json();
+    const designId = storedData?._design === 'clinical' ? 'clinical' : response.headers.get('X-Design-Id') || 'classic';
     if (!DESIGNS[designId]) throw new Error('The saved lecture uses an unsupported design.');
-    const data = LectureRenderer.normalize(await response.json());
+    const data = LectureRenderer.normalize(storedData);
     const templateResponse = await fetch(`/${DESIGNS[designId]}`, { cache: 'no-store' });
     if (!templateResponse.ok) throw new Error('The lecture design could not be loaded.');
     const html = LectureRenderer.render(data, await templateResponse.text(), designId);
