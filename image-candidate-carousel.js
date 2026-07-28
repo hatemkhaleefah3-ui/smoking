@@ -16,6 +16,7 @@
     cards: new Map(),
     readSequence: 0,
     renderQueued: false,
+    startSearchQueued: false,
     suppressNativeCapture: false
   };
 
@@ -30,7 +31,7 @@
   });
   elements.buildButton.addEventListener('click', () => queueRender(true));
   elements.imageList.addEventListener('change', captureNativeSelection, true);
-  new MutationObserver(() => queueRender(false)).observe(elements.imageList, { childList: true });
+  new MutationObserver(() => queueRender(true)).observe(elements.imageList, { childList: true });
 
   async function readJson(file) {
     const sequence = ++state.readSequence;
@@ -76,15 +77,19 @@
     state.definitions = [];
     state.slots = [];
     state.cards.clear();
+    state.startSearchQueued = false;
     elements.imageList.querySelectorAll('.image-candidate-shell').forEach((node) => node.remove());
   }
 
   function queueRender(startSearch) {
+    if (startSearch) state.startSearchQueued = true;
     if (state.renderQueued) return;
     state.renderQueued = true;
     queueMicrotask(() => {
+      const shouldStartSearch = state.startSearchQueued;
+      state.startSearchQueued = false;
       state.renderQueued = false;
-      render(startSearch);
+      render(shouldStartSearch);
     });
   }
 
