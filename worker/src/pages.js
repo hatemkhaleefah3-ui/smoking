@@ -1,12 +1,15 @@
 import lecturePublisher from './index.js';
 import { handleImageAssetRequest } from './image-assets.js';
 import { handleEnhancedMediaSearch } from './media-search-enhanced.js';
+import { handleIntentMediaSearch } from './media-search-intent.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
+      const intentResponse = await handleIntentMediaSearch(request, env);
+      if (intentResponse) return intentResponse;
       return handleEnhancedMediaSearch(request, env);
     }
     const pdfResponse = await handlePdfExtractionRequest(request, env, url);
