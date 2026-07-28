@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
-import { handleMediaSearch } from '../worker/src/media-search.js';
+import worker from '../worker/src/pages.js';
 
 const originalFetch = globalThis.fetch;
 
 try {
   let fetchCalls = 0;
   globalThis.fetch = async () => { fetchCalls += 1; throw new Error('fetch should not run'); };
-  const emptyResponse = await handleMediaSearch(request({ query: '   ' }), { GEMINI_API_KEY: 'test-key' });
+  const emptyResponse = await worker.fetch(request({ query: '   ' }), { GEMINI_API_KEY: 'test-key' }, {});
   assert.equal(emptyResponse.status, 400);
   assert.equal(fetchCalls, 0);
 
@@ -28,7 +28,9 @@ try {
     });
   };
 
-  const successResponse = await handleMediaSearch(request({ query: 'hart anatomie' }), { GEMINI_API_KEY: 'test-key' });
+  // No DB binding is provided: this proves /api/search is handled before the
+  // lecture API's D1 initialization and cannot fall through to the old router.
+  const successResponse = await worker.fetch(request({ query: 'hart anatomie' }), { GEMINI_API_KEY: 'test-key' }, {});
   assert.equal(successResponse.status, 200);
   assert.deepEqual(await successResponse.json(), {
     images: [
@@ -40,11 +42,11 @@ try {
   assert.match(requestedUrls[1], /gsrlimit=5/);
 
   globalThis.fetch = async () => new Response('failed', { status: 500 });
-  const failureResponse = await handleMediaSearch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'test-key' });
+  const failureResponse = await worker.fetch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'test-key' }, {});
   assert.equal(failureResponse.status, 502);
   assert.deepEqual(await failureResponse.json(), { error: 'Something went wrong' });
 
-  console.log('Media search validation passed.');
+  console.log('Media search routing validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
