@@ -8,7 +8,6 @@ export async function createPdfExtraction(request, env, url, { HttpError, json }
 
   const maximumResultBytes = integerEnv(env.MAX_EXTRACTED_IMAGE_BYTES, DEFAULT_MAX_EXTRACTED_IMAGE_BYTES);
   const declaredLength = Number(request.headers.get('Content-Length') || 0);
-  if (declaredLength <= 0) throw new HttpError(411, 'The extracted result size is required.');
   if (declaredLength > maximumResultBytes) {
     throw new HttpError(413, `The extracted result exceeds the ${formatMegabytes(maximumResultBytes)} MB limit.`);
   }
@@ -55,8 +54,25 @@ export async function createPdfExtraction(request, env, url, { HttpError, json }
         createdAt
       }
     });
+  } catch (error) {
+    console.error(JSON.stringify({
+      event: 'pdf_extraction_artifact_store_failed',
+      message: error instanceof Error ? error.message : String(error)
+    }));
+    throw new HttpError(500, 'The extracted result could not be stored. Check the R2 binding, then retry.');
+  }
 
-    const outputSizeBytes = storedObject?.size || declaredLength;
+  const outputSizeBytes = Number(storedObject?.size || declaredLength || 0);
+  if (outputSizeBytes <= 0) {
+    await safeDelete(env.PDF_EXTRACTIONS, outputKey);
+    throw new HttpError(500, 'The extracted result size could not be verified.');
+  }
+  if (outputSizeBytes > maximumResultBytes) {
+    await safeDelete(env.PDF_EXTRACTIONS, outputKey);
+    throw new HttpError(413, `The extracted result exceeds the ${formatMegabytes(maximumResultBytes)} MB limit.`);
+  }
+
+  try {
     await env.DB.prepare(`
       INSERT INTO pdf_extraction_jobs (
         id, source_filename, requested_json, image_count,
@@ -74,16 +90,14 @@ export async function createPdfExtraction(request, env, url, { HttpError, json }
       createdAt
     ).run();
   } catch (error) {
-    try { await env.PDF_EXTRACTIONS.delete(outputKey); }
-    catch { /* best-effort cleanup */ }
+    await safeDelete(env.PDF_EXTRACTIONS, outputKey);
     console.error(JSON.stringify({
-      event: 'pdf_extraction_artifact_store_failed',
+      event: 'pdf_extraction_metadata_store_failed',
       message: error instanceof Error ? error.message : String(error)
     }));
-    throw new HttpError(500, 'The extracted result could not be stored. Check the R2 and DB bindings, then retry.');
+    throw new HttpError(500, 'The extracted result metadata could not be stored. Check the D1 binding, then retry.');
   }
 
-  const outputSizeBytes = storedObject?.size || declaredLength;
   console.log(JSON.stringify({
     event: 'pdf_images_stored',
     id,
@@ -191,6 +205,11 @@ function contentDisposition(filename) {
   const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
   const encoded = encodeURIComponent(filename).replace(/[!'()*]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+async function safeDelete(bucket, key) {
+  try { await bucket.delete(key); }
+  catch { /* best-effort cleanup */ }
 }
 
 function integerEnv(value, fallback) {
