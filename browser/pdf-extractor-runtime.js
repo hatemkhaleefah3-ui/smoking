@@ -3,16 +3,16 @@ import { zipSync } from 'fflate';
 const MAX_REQUESTED_IMAGES = 500;
 let mupdfPromise = null;
 
-export async function extractPdfArtifact(file, rawSelectors = '') {
+export async function extractPdfImages(file, selectors) {
   if (!(file instanceof File)) throw new Error('A PDF file is required.');
 
-  const requestSelection = parseRequestedImages(rawSelectors);
+  const normalizedSelectors = normalizeSelectors(selectors);
   const pdfBytes = new Uint8Array(await file.arrayBuffer());
   const mupdf = await loadMupdf();
 
   let extracted;
   try {
-    extracted = extractImages(mupdf, pdfBytes, requestSelection.selectors);
+    extracted = extractImages(mupdf, pdfBytes, normalizedSelectors);
   } catch (error) {
     const detail = safeErrorMessage(error);
     throw new Error(detail ? `Could not read or extract images from this PDF: ${detail}` : 'Could not read or extract images from this PDF.');
@@ -22,12 +22,22 @@ export async function extractPdfArtifact(file, rawSelectors = '') {
     throw new Error('This PDF has no extractable embedded images.');
   }
 
+  return extracted.map((item) => ({
+    ...item,
+    blob: new Blob([item.bytes], { type: 'image/png' })
+  }));
+}
+
+export async function extractPdfArtifact(file, rawSelectors = '') {
+  const requestSelection = parseRequestedImages(rawSelectors);
+  const extracted = await extractPdfImages(file, requestSelection.selectors);
   const baseFilename = filenameBase(file.name);
+
   if (extracted.length === 1) {
     const item = extracted[0];
     const filename = `${baseFilename}-${item.filename}`;
     return {
-      blob: new Blob([item.bytes], { type: 'image/png' }),
+      blob: item.blob,
       filename,
       contentType: 'image/png',
       imageCount: 1,
@@ -172,13 +182,23 @@ function parseRequestedImages(value) {
   if (!Array.isArray(parsed.images) || parsed.images.length === 0) {
     throw new Error('The images field must contain a non-empty images array, or be left empty to extract all images.');
   }
-  if (parsed.images.length > MAX_REQUESTED_IMAGES) {
+
+  const selectors = normalizeSelectors(parsed.images);
+  return { selectors, requestedJson: JSON.stringify({ images: selectors }) };
+}
+
+function normalizeSelectors(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error('At least one PDF image location is required.');
+  }
+  if (value.length > MAX_REQUESTED_IMAGES) {
     throw new Error(`A maximum of ${MAX_REQUESTED_IMAGES} images can be requested at once.`);
   }
 
   const selectors = [];
   const seen = new Set();
-  for (const item of parsed.images) {
+  for (const item of value) {
     const page = Number(item?.page);
     const position = Number(item?.position);
     if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(position) || position < 1) {
@@ -190,7 +210,7 @@ function parseRequestedImages(value) {
       selectors.push({ page, position });
     }
   }
-  return { selectors, requestedJson: JSON.stringify({ images: selectors }) };
+  return selectors;
 }
 
 function groupSelectorsByPage(selectors) {
