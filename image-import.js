@@ -53,10 +53,9 @@
   }
 
   function collectPdfImportPlan(source, slots = collectImageSlots(source)) {
-    const lectureName = typeof source?.lectureName === 'string' ? source.lectureName.trim() : '';
     const rawImages = source?.imoo?.images;
-    const hasImoo = Array.isArray(rawImages) || isObject(source?.imoo);
-    if (!lectureName && !hasImoo) return null;
+    if (!isObject(source?.imoo)) return null;
+    const lectureName = typeof source?.lectureName === 'string' ? source.lectureName.trim() : '';
 
     const errors = [];
     const extensionMatch = lectureName.match(/\.([^.]+)$/);
