@@ -1,29 +1,10 @@
 const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_QUERY_LENGTH = 200;
 const REQUEST_TIMEOUT_MS = 12_000;
+const MAX_ATTEMPTS = 3;
 const MAX_IMAGES = 5;
-const MIN_RESULTS_BEFORE_BROADENING = 3;
-const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.4 (https://github.com/hatemkhaleefah3-ui/smoking)';
-const VISUAL_TYPES = Object.freeze([
-  'labeled anatomical diagram',
-  'histology micrograph',
-  'microscopy image',
-  'biochemical pathway diagram',
-  'biological process diagram',
-  'molecular structure diagram',
-  'chemical reaction scheme',
-  'technical schematic',
-  'cross-section diagram',
-  'block diagram',
-  'flowchart',
-  'scientific illustration',
-  'data graph',
-  'geographic map',
-  'scientific photograph',
-  'archival photograph',
-  'geometric diagram'
-]);
-const VISUAL_TYPE_SET = new Set(VISUAL_TYPES);
+const MAX_CANDIDATES = 12;
+const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.5 (https://github.com/hatemkhaleefah3-ui/smoking)';
 
 export async function handleMediaSearch(request, env) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405, { Allow: 'POST' });
@@ -39,85 +20,133 @@ export async function handleMediaSearch(request, env) {
     return json({ error: 'A JSON request body is required.' }, 400);
   }
 
-  const query = typeof input?.query === 'string' ? input.query.trim().slice(0, MAX_QUERY_LENGTH) : '';
+  const query = sanitizeSearchTerm(typeof input?.query === 'string' ? input.query : '');
   if (!query) return json({ error: 'Query is required.' }, 400);
 
-  const fallbackTerms = buildGenericFallbackTerms(query);
-  const terms = await refineSearchTermsSafely(query, fallbackTerms, env);
-
   try {
-    let images = await searchWikimediaCommons(terms.primaryTerm);
-    if (images.length < MIN_RESULTS_BEFORE_BROADENING && normalizeTerm(terms.primaryTerm) !== normalizeTerm(terms.broadTerm)) {
-      images = mergeImages(images, await searchWikimediaCommons(terms.broadTerm));
+    if (!env?.GEMINI_API_KEY) {
+      console.warn(JSON.stringify({
+        event: 'media_search_fallback',
+        stage: 'configuration',
+        message: 'GEMINI_API_KEY is missing; searching the original user text once.'
+      }));
+      const candidates = await searchWikimediaCommons(query);
+      return json({ images: candidates.slice(0, MAX_IMAGES).map((candidate) => candidate.url) });
     }
-    return json({ images: images.slice(0, MAX_IMAGES) });
+
+    const previousTerms = [];
+    const rejectedTitles = [];
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      const searchTerm = await generateSearchVariation(query, attempt, previousTerms, rejectedTitles, env);
+      if (!searchTerm || previousTerms.some((term) => normalizeTerm(term) === normalizeTerm(searchTerm))) continue;
+      previousTerms.push(searchTerm);
+
+      const candidates = await searchWikimediaCommons(searchTerm);
+      if (candidates.length === 0) continue;
+
+      const relevantIndexes = await selectRelevantCandidates(query, searchTerm, candidates, env);
+      const relevantImages = relevantIndexes
+        .map((index) => candidates[index])
+        .filter(Boolean)
+        .slice(0, MAX_IMAGES)
+        .map((candidate) => candidate.url);
+
+      if (relevantImages.length > 0) return json({ images: relevantImages });
+      rejectedTitles.push(...candidates.map((candidate) => candidate.title).filter(Boolean));
+    }
+
+    return json({ images: [] });
   } catch (error) {
     console.error(JSON.stringify({
       event: 'media_search_error',
-      stage: error?.stage || 'wikimedia',
+      stage: error?.stage || 'unknown',
       message: error instanceof Error ? error.message : String(error)
     }));
     return json({ error: 'Something went wrong' }, 502);
   }
 }
 
-async function refineSearchTermsSafely(query, fallbackTerms, env) {
-  if (!env?.GEMINI_API_KEY) {
-    console.warn(JSON.stringify({
-      event: 'media_search_fallback',
-      stage: 'configuration',
-      message: 'GEMINI_API_KEY is missing; using a concise generic visual query.'
-    }));
-    return fallbackTerms;
-  }
+async function generateSearchVariation(query, attempt, previousTerms, rejectedTitles, env) {
+  const attemptInstruction = {
+    1: 'Produce a clean English translation or light refinement of the exact user input. Use the standard academic or technical name when one exists. Do not add a new subject, medium, audience, or interpretation.',
+    2: 'Produce a genuinely different synonym, standard academic term, abbreviation expansion, or conventional alternate phrasing for the exact same concept. Do not broaden, narrow, or change the requested visual meaning.',
+    3: 'Produce one final alternative phrasing for the exact same concept using another accepted technical term or concise word order. Preserve every explicit constraint and do not drift to a related topic.'
+  }[attempt];
 
-  try {
-    return await refineSearchTerms(query, env);
-  } catch (error) {
-    console.warn(JSON.stringify({
-      event: 'media_search_fallback',
-      stage: error?.stage || 'gemini',
-      message: error instanceof Error ? error.message : String(error)
-    }));
-    return fallbackTerms;
+  const prompt = [
+    'You generate Wikimedia Commons search phrases from user-provided alt text.',
+    'Preserve the user’s core intent exactly: subject, process, relationship, requested visual form, population, location, time period, and every explicit constraint.',
+    'Never replace the requested concept with a merely related concept. Never invent medical, scientific, historical, decorative, or symbolic intent that the user did not express.',
+    'Keep the phrase concise and natural, not a stuffed list of keywords. Prefer 2 to 8 words.',
+    attemptInstruction,
+    `Original user input: ${query}`,
+    previousTerms.length ? `Previously tried phrases that must not be repeated: ${JSON.stringify(previousTerms)}` : '',
+    rejectedTitles.length ? `Previous Wikimedia titles were judged irrelevant. Avoid drifting toward these meanings: ${JSON.stringify(rejectedTitles.slice(-12))}` : '',
+    'Return only the structured result.'
+  ].filter(Boolean).join('\n');
+
+  const result = await callGemini(prompt, {
+    type: 'OBJECT',
+    properties: {
+      searchTerm: {
+        type: 'STRING',
+        description: 'One concise English Wikimedia search phrase that preserves the exact original intent.'
+      },
+      intentSummary: {
+        type: 'STRING',
+        description: 'A short statement of the original concept that the phrase must continue to represent.'
+      }
+    },
+    required: ['searchTerm', 'intentSummary']
+  }, env, 96);
+
+  const term = sanitizeSearchTerm(result?.searchTerm);
+  if (!term) {
+    const error = new Error('Gemini returned an empty search variation.');
+    error.stage = 'gemini';
+    throw error;
   }
+  return term;
 }
 
-async function refineSearchTerms(query, env) {
+async function selectRelevantCandidates(query, searchTerm, candidates, env) {
+  const titleList = candidates.map((candidate, index) => ({ index, title: candidate.title }));
+  const prompt = [
+    'You validate Wikimedia Commons search results against the user’s exact alt-text intent.',
+    'Select only candidates whose file title depicts the same requested concept or a direct visual representation of it.',
+    'Accept standard synonyms and academic terminology.',
+    'Reject results that are merely metaphorical, decorative, musical, linguistic, heraldic, symbolic, commercial, or otherwise unrelated unless the user explicitly requested that meaning.',
+    'Do not change or broaden the original request while judging relevance.',
+    `Original user input: ${query}`,
+    `Search phrase used: ${searchTerm}`,
+    `Candidate file titles: ${JSON.stringify(titleList)}`,
+    'Return the zero-based indexes of relevant candidates only.'
+  ].join('\n');
+
+  const result = await callGemini(prompt, {
+    type: 'OBJECT',
+    properties: {
+      relevantIndexes: {
+        type: 'ARRAY',
+        items: { type: 'INTEGER' },
+        description: 'Zero-based indexes of candidates that directly satisfy the original user intent.'
+      }
+    },
+    required: ['relevantIndexes']
+  }, env, 96);
+
+  if (!Array.isArray(result?.relevantIndexes)) return [];
+  return [...new Set(result.relevantIndexes)]
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < candidates.length)
+    .slice(0, MAX_IMAGES);
+}
+
+async function callGemini(prompt, responseSchema, env, maxOutputTokens) {
   const model = typeof env.GEMINI_MODEL === 'string' && env.GEMINI_MODEL.trim()
     ? env.GEMINI_MODEL.trim()
     : DEFAULT_GEMINI_MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-  const prompt = [
-    'You are an academic visual-search planner for Wikimedia Commons.',
-    'Convert the user input into a concise English plan for finding several useful educational images.',
-    '',
-    'Infer the canonical topic and academic or technical domain, then select the single visual format that best represents it:',
-    '- anatomy or macroscopic body structure -> labeled anatomical diagram',
-    '- tissue architecture or pathology -> histology micrograph',
-    '- cells, microbes, or subcellular structures -> microscopy image',
-    '- metabolism, signaling, or enzyme sequences -> biochemical pathway diagram',
-    '- biological cycles, mechanisms, or staged processes -> biological process diagram',
-    '- molecules or macromolecules -> molecular structure diagram',
-    '- chemical transformations -> chemical reaction scheme',
-    '- machines, circuits, devices, or engineering systems -> technical schematic, cross-section diagram, or block diagram',
-    '- algorithms, software, workflows, or decision logic -> flowchart or block diagram',
-    '- quantitative relationships -> data graph',
-    '- spatial or geographic topics -> geographic map',
-    '- astronomy, field science, specimens, or observable phenomena -> scientific photograph',
-    '- historical events or people -> archival photograph when appropriate',
-    '- geometry or mathematical constructions -> geometric diagram',
-    '- otherwise -> scientific illustration',
-    '',
-    'Keep the search broad enough for Wikimedia Commons to return multiple files.',
-    'Choose zero, one, or at most two short precision qualifiers. Prefer one qualifier.',
-    'Each qualifier must be one to three words and must add useful discrimination without repeating the topic, domain, or visual type.',
-    'Do not produce long keyword lists. Do not include more than two qualifiers.',
-    'Avoid decorative art, logos, quotations, sheet music, plaques, and stock imagery unless explicitly requested.',
-    'Do not include commentary or mention Wikimedia Commons.',
-    `User input: ${query}`
-  ].join('\n');
-
   const response = await fetchWithTimeout(endpoint, {
     method: 'POST',
     headers: {
@@ -127,33 +156,9 @@ async function refineSearchTerms(query, env) {
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 128,
+        maxOutputTokens,
         responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'OBJECT',
-          properties: {
-            canonicalTopic: {
-              type: 'STRING',
-              description: 'The concise disambiguated English topic name.'
-            },
-            domain: {
-              type: 'STRING',
-              description: 'The academic or technical field used for reasoning. It will not automatically be added to the Wikimedia query.'
-            },
-            visualType: {
-              type: 'STRING',
-              enum: VISUAL_TYPES,
-              description: 'The single visual format that best communicates this topic.'
-            },
-            qualifiers: {
-              type: 'ARRAY',
-              items: { type: 'STRING' },
-              maxItems: 2,
-              description: 'Zero to two short precision keywords. Prefer one and never return more than two.'
-            }
-          },
-          required: ['canonicalTopic', 'domain', 'visualType', 'qualifiers']
-        }
+        responseSchema
       }
     })
   });
@@ -164,95 +169,37 @@ async function refineSearchTerms(query, env) {
     throw error;
   }
 
-  let result;
+  let payload;
   try {
-    result = await response.json();
+    payload = await response.json();
   } catch {
     const error = new Error('Gemini returned invalid JSON.');
     error.stage = 'gemini';
     throw error;
   }
 
-  const responseText = (result?.candidates?.[0]?.content?.parts || [])
+  const responseText = (payload?.candidates?.[0]?.content?.parts || [])
     .map((part) => typeof part?.text === 'string' ? part.text : '')
     .join(' ')
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
 
-  let plan;
   try {
-    plan = JSON.parse(responseText);
+    return JSON.parse(responseText);
   } catch {
-    const error = new Error('Gemini did not return the required search plan.');
+    const error = new Error('Gemini did not return the required structured result.');
     error.stage = 'gemini';
     throw error;
   }
-
-  return buildSearchTermsFromPlan(plan);
 }
 
-function buildSearchTermsFromPlan(plan) {
-  const canonicalTopic = sanitizeSearchTerm(plan?.canonicalTopic);
-  const domain = sanitizeSearchTerm(plan?.domain);
-  const visualType = sanitizeSearchTerm(plan?.visualType);
-  const qualifiers = Array.isArray(plan?.qualifiers)
-    ? plan.qualifiers.map(sanitizeSearchTerm).filter(Boolean).slice(0, 2)
-    : [];
-
-  if (!canonicalTopic || !domain || !VISUAL_TYPE_SET.has(visualType)) {
-    const error = new Error('Gemini returned an incomplete or unsupported search plan.');
-    error.stage = 'gemini';
-    throw error;
-  }
-
-  const broadTerm = joinDistinctParts([canonicalTopic, visualType]);
-  const usefulQualifiers = qualifiers.filter((qualifier) => {
-    const normalized = normalizeTerm(qualifier);
-    return normalized && !normalizeTerm(broadTerm).includes(normalized);
-  });
-  const primaryTerm = joinDistinctParts([canonicalTopic, visualType, ...usefulQualifiers]);
-
-  if (!primaryTerm || normalizeTerm(primaryTerm) === normalizeTerm(canonicalTopic)) {
-    const error = new Error('Gemini search plan was not specific enough.');
-    error.stage = 'gemini';
-    throw error;
-  }
-
-  return { primaryTerm, broadTerm };
-}
-
-function buildGenericFallbackTerms(query) {
-  const cleanQuery = sanitizeSearchTerm(query);
-  return {
-    primaryTerm: joinDistinctParts([cleanQuery, 'scientific diagram']),
-    broadTerm: joinDistinctParts([cleanQuery, 'diagram'])
-  };
-}
-
-function joinDistinctParts(parts) {
-  const output = [];
-  const seen = new Set();
-  for (const part of parts) {
-    const clean = sanitizeSearchTerm(part);
-    const normalized = normalizeTerm(clean);
-    if (!normalized || seen.has(normalized)) continue;
-    seen.add(normalized);
-    output.push(clean);
-  }
-  return sanitizeSearchTerm(output.join(' '));
-}
-
-function mergeImages(first, second) {
-  return [...new Set([...first, ...second])].slice(0, MAX_IMAGES);
-}
-
-async function searchWikimediaCommons(refinedTerm) {
+async function searchWikimediaCommons(searchTerm) {
   const parameters = new URLSearchParams({
     action: 'query',
     generator: 'search',
-    gsrsearch: refinedTerm,
-    gsrlimit: '15',
+    gsrsearch: searchTerm,
+    gsrlimit: String(MAX_CANDIDATES),
     gsrnamespace: '6',
     prop: 'imageinfo',
     iiprop: 'url|mime',
@@ -290,25 +237,27 @@ async function searchWikimediaCommons(refinedTerm) {
     throw error;
   }
 
-  const pages = Object.values(result?.query?.pages || {});
-  const images = [];
+  const candidates = [];
   const seen = new Set();
-  for (const page of pages) {
+  for (const page of Object.values(result?.query?.pages || {})) {
     const imageInfo = page?.imageinfo?.[0];
     if (!imageInfo || (typeof imageInfo.mime === 'string' && !imageInfo.mime.startsWith('image/'))) continue;
     const value = imageInfo.thumburl || imageInfo.url;
-    if (typeof value !== 'string' || seen.has(value)) continue;
+    if (typeof value !== 'string') continue;
     try {
       const url = new URL(value);
-      if (url.protocol !== 'https:') continue;
+      if (url.protocol !== 'https:' || seen.has(url.href)) continue;
       seen.add(url.href);
-      images.push(url.href);
-      if (images.length === MAX_IMAGES) break;
+      candidates.push({
+        url: url.href,
+        title: sanitizeFileTitle(page?.title)
+      });
+      if (candidates.length === MAX_CANDIDATES) break;
     } catch {
       // Ignore malformed Wikimedia entries.
     }
   }
-  return images;
+  return candidates;
 }
 
 async function fetchWithTimeout(url, options) {
@@ -319,6 +268,10 @@ async function fetchWithTimeout(url, options) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sanitizeFileTitle(value) {
+  return sanitizeSearchTerm(String(value || '').replace(/^File:/i, ''));
 }
 
 function sanitizeSearchTerm(value) {
