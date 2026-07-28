@@ -1,7 +1,15 @@
 const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_QUERY_LENGTH = 200;
 const REQUEST_TIMEOUT_MS = 12_000;
-const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.1 (https://github.com/hatemkhaleefah3-ui/smoking)';
+const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.2 (https://github.com/hatemkhaleefah3-ui/smoking)';
+const MEDICAL_VISUAL_TERMS = new Set([
+  'heart', 'brain', 'lung', 'lungs', 'kidney', 'kidneys', 'liver', 'stomach',
+  'intestine', 'intestines', 'colon', 'pancreas', 'spleen', 'bladder', 'uterus',
+  'ovary', 'ovaries', 'prostate', 'eye', 'eyes', 'ear', 'ears', 'skin', 'bone',
+  'bones', 'skeleton', 'spine', 'skull', 'muscle', 'muscles', 'artery', 'arteries',
+  'vein', 'veins', 'blood', 'neuron', 'neurons', 'nerve', 'nerves', 'cell', 'cells'
+]);
+const NON_MEDICAL_HINTS = /\b(symbol|emoji|icon|logo|love|valentine|card|band|song|music|album|film|movie|game|tattoo|jewelry|shape)\b/i;
 
 export async function handleMediaSearch(request, env) {
   if (request.method !== 'POST') {
@@ -24,15 +32,16 @@ export async function handleMediaSearch(request, env) {
   const query = typeof input?.query === 'string' ? input.query.trim().slice(0, MAX_QUERY_LENGTH) : '';
   if (!query) return json({ error: 'Query is required.' }, 400);
 
-  const refinement = await refineSearchTermSafely(query, env);
+  const deterministicTerm = buildDeterministicSearchTerm(query);
+  const refinement = await refineSearchTermSafely(query, deterministicTerm, env);
 
   try {
     let images = await searchWikimediaCommons(refinement.term);
 
-    // A refined term can occasionally be too narrow. Retry the visitor's original
-    // words before reporting zero results.
-    if (images.length === 0 && refinement.usedGemini && normalizeTerm(refinement.term) !== normalizeTerm(query)) {
-      images = await searchWikimediaCommons(query);
+    // Gemini can occasionally produce a phrase that is too narrow. Retry with the
+    // deterministic educational query rather than the ambiguous raw input.
+    if (images.length === 0 && normalizeTerm(refinement.term) !== normalizeTerm(deterministicTerm)) {
+      images = await searchWikimediaCommons(deterministicTerm);
     }
 
     return json({ images });
@@ -46,25 +55,26 @@ export async function handleMediaSearch(request, env) {
   }
 }
 
-async function refineSearchTermSafely(query, env) {
+async function refineSearchTermSafely(query, deterministicTerm, env) {
   if (!env?.GEMINI_API_KEY) {
     console.warn(JSON.stringify({
       event: 'media_search_fallback',
       stage: 'configuration',
-      message: 'GEMINI_API_KEY is missing; using the original Wikimedia query.'
+      message: 'GEMINI_API_KEY is missing; using deterministic educational refinement.'
     }));
-    return { term: query, usedGemini: false };
+    return { term: deterministicTerm, usedGemini: false };
   }
 
   try {
-    return { term: await refineSearchTerm(query, env), usedGemini: true };
+    const geminiTerm = await refineSearchTerm(query, env);
+    return { term: enforceEducationalSpecificity(query, geminiTerm), usedGemini: true };
   } catch (error) {
     console.warn(JSON.stringify({
       event: 'media_search_fallback',
       stage: error?.stage || 'gemini',
       message: error instanceof Error ? error.message : String(error)
     }));
-    return { term: query, usedGemini: false };
+    return { term: deterministicTerm, usedGemini: false };
   }
 }
 
@@ -74,9 +84,17 @@ async function refineSearchTerm(query, env) {
     : DEFAULT_GEMINI_MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const prompt = [
-    'Turn the user text into one concise English Wikimedia Commons image search phrase.',
-    'Correct spelling, translate when needed, preserve important names and concepts, and remove conversational filler.',
-    'Return only the search phrase with no explanation, labels, quotation marks, or Markdown.',
+    'Create one precise English Wikimedia Commons image-search phrase for an educational lecture.',
+    'Correct spelling and translate when needed.',
+    'Resolve ambiguous short inputs toward the most useful educational visual meaning.',
+    'For human organs, anatomy, cells, or body parts, include human/anatomy plus diagram or medical illustration.',
+    'Avoid songs, sheet music, quotations, logos, symbols, emojis, and decorative graphics unless the user explicitly asks for them.',
+    'Use 5 to 10 concrete keywords likely to appear in Wikimedia file titles or descriptions.',
+    'Examples:',
+    'Heart -> human heart anatomy diagram medical illustration',
+    'Lungs -> human lungs respiratory anatomy diagram medical illustration',
+    'Mars -> planet Mars surface photograph NASA',
+    'Heart symbol -> red heart symbol icon',
     `User text: ${query}`
   ].join('\n');
 
@@ -88,7 +106,20 @@ async function refineSearchTerm(query, env) {
     },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 64 }
+      generationConfig: {
+        maxOutputTokens: 96,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            searchTerm: {
+              type: 'STRING',
+              description: 'A precise English Wikimedia Commons image search phrase containing 5 to 10 concrete visual keywords.'
+            }
+          },
+          required: ['searchTerm']
+        }
+      }
     })
   });
 
@@ -99,16 +130,23 @@ async function refineSearchTerm(query, env) {
   }
 
   const result = await response.json();
-  const refinedTerm = (result?.candidates?.[0]?.content?.parts || [])
+  const responseText = (result?.candidates?.[0]?.content?.parts || [])
     .map((part) => typeof part?.text === 'string' ? part.text : '')
     .join(' ')
-    .replace(/^```(?:text)?\s*/i, '')
+    .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
-    .replace(/^['"“”]+|['"“”]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_QUERY_LENGTH);
+    .trim();
 
+  let refinedTerm = '';
+  try {
+    const structured = JSON.parse(responseText);
+    refinedTerm = typeof structured?.searchTerm === 'string' ? structured.searchTerm : '';
+  } catch {
+    // Retain compatibility if a model ignores the requested JSON schema.
+    refinedTerm = responseText;
+  }
+
+  refinedTerm = sanitizeSearchTerm(refinedTerm);
   if (!refinedTerm) {
     const error = new Error('Gemini returned an empty search term.');
     error.stage = 'gemini';
@@ -118,15 +156,40 @@ async function refineSearchTerm(query, env) {
   return refinedTerm;
 }
 
+function enforceEducationalSpecificity(query, refinedTerm) {
+  const cleanTerm = sanitizeSearchTerm(refinedTerm);
+  if (!isMedicalVisualQuery(query)) return cleanTerm || buildDeterministicSearchTerm(query);
+
+  const normalized = normalizeTerm(cleanTerm);
+  const hasHumanContext = /\b(human|anatomy|anatomical|medical)\b/.test(normalized);
+  const hasVisualContext = /\b(diagram|illustration|cross section|medical image|anatomical plate)\b/.test(normalized);
+  if (hasHumanContext && hasVisualContext) return cleanTerm;
+
+  return buildDeterministicSearchTerm(query);
+}
+
+function buildDeterministicSearchTerm(query) {
+  const cleanQuery = sanitizeSearchTerm(query);
+  if (!isMedicalVisualQuery(cleanQuery)) return cleanQuery;
+  return `human ${normalizeTerm(cleanQuery)} anatomy diagram medical illustration`;
+}
+
+function isMedicalVisualQuery(query) {
+  if (NON_MEDICAL_HINTS.test(query)) return false;
+  const tokens = normalizeTerm(query).split(/[^a-z0-9]+/).filter(Boolean);
+  return tokens.some((token) => MEDICAL_VISUAL_TERMS.has(token));
+}
+
 async function searchWikimediaCommons(refinedTerm) {
   const parameters = new URLSearchParams({
     action: 'query',
     generator: 'search',
     gsrsearch: refinedTerm,
-    gsrlimit: '5',
+    gsrlimit: '10',
     gsrnamespace: '6',
     prop: 'imageinfo',
-    iiprop: 'url',
+    iiprop: 'url|mime',
+    iiurlwidth: '900',
     format: 'json'
   });
   const endpoint = `https://commons.wikimedia.org/w/api.php?${parameters}`;
@@ -165,7 +228,9 @@ async function searchWikimediaCommons(refinedTerm) {
   const seen = new Set();
 
   for (const page of pages) {
-    const value = page?.imageinfo?.[0]?.url;
+    const imageInfo = page?.imageinfo?.[0];
+    if (!imageInfo || (typeof imageInfo.mime === 'string' && !imageInfo.mime.startsWith('image/'))) continue;
+    const value = imageInfo.thumburl || imageInfo.url;
     if (typeof value !== 'string' || seen.has(value)) continue;
     try {
       const url = new URL(value);
@@ -191,8 +256,17 @@ async function fetchWithTimeout(url, options) {
   }
 }
 
+function sanitizeSearchTerm(value) {
+  return String(value || '')
+    .replace(/^['"“”]+|['"“”]+$/g, '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_QUERY_LENGTH);
+}
+
 function normalizeTerm(value) {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+  return sanitizeSearchTerm(value).toLowerCase();
 }
 
 function json(data, status = 200, extraHeaders = {}) {
