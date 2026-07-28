@@ -1,6 +1,7 @@
 import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -16,13 +17,22 @@ for (const file of files) await cp(resolve(root, file), resolve(dist, file));
 await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: true });
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
 
-// Cloudflare Pages Advanced Mode runs a Module Worker placed at dist/_worker.js.
-// Copy the router and its local modules together so Pages and Workers share the same API behavior.
-await cp(resolve(root, 'worker/src/pages.js'), resolve(dist, '_worker.js'));
-await cp(resolve(root, 'worker/src/index.js'), resolve(dist, 'index.js'));
-await cp(resolve(root, 'worker/src/media-search.js'), resolve(dist, 'media-search.js'));
+// Pages Advanced Mode ignores /functions and deploys dist/_worker.js. Bundle the
+// complete router and its dependencies into that one file so no sibling Worker
+// modules can be omitted or treated as static assets during deployment.
+await build({
+  entryPoints: [resolve(root, 'worker/src/pages.js')],
+  outfile: resolve(dist, '_worker.js'),
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  minify: false,
+  sourcemap: false,
+  legalComments: 'none'
+});
 
-// Keep Worker modules out of the public static asset manifest while leaving them available to the module bundler.
-await writeFile(resolve(dist, '.assetsignore'), '_worker.js\nindex.js\nmedia-search.js\n');
+// Wrangler must not publish the Advanced Mode entrypoint as a static asset.
+await writeFile(resolve(dist, '.assetsignore'), '_worker.js\n');
 
-console.log(`Built Pages assets and dual-deployment safeguards in ${dist}`);
+console.log(`Built static assets and bundled Advanced Mode Worker in ${dist}`);

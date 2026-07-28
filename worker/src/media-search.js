@@ -62,7 +62,7 @@ async function refineSearchTerm(query, env) {
     },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 64 }
+      generationConfig: { maxOutputTokens: 64 }
     })
   });
 
@@ -98,6 +98,7 @@ async function searchWikimediaCommons(refinedTerm) {
     generator: 'search',
     gsrsearch: refinedTerm,
     gsrlimit: '5',
+    gsrnamespace: '6',
     prop: 'imageinfo',
     iiprop: 'url',
     format: 'json',
