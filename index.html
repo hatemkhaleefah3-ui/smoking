@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="smart-media-search.css">
   <script src="lecture-renderer.js" defer></script>
   <script src="clinical-v2-adapter.js" defer></script>
+  <script src="integrated-v2-adapter.js" defer></script>
   <script src="app.js" defer></script>
   <script src="smart-media-search.js" defer></script>
 </head>
@@ -55,6 +56,12 @@
           <input type="radio" name="design" value="clinical">
           <span class="design-thumbnail thumbnail-clinical" aria-hidden="true"><span class="thumbnail-clinical-hero"></span><span class="thumbnail-clinical-overview"></span><span class="thumbnail-clinical-content"><span class="thumbnail-clinical-number"></span><span class="thumbnail-lines"></span></span></span>
           <span class="design-copy"><span class="design-name">Clinical Notes</span><span class="design-description">Dark clinical cover, overview strip and numbered reading sections.</span></span>
+          <span class="selection-badge">Selected</span>
+        </label>
+        <label class="design-option">
+          <input type="radio" name="design" value="integrated">
+          <span class="design-thumbnail thumbnail-editorial" aria-hidden="true"><span class="thumbnail-masthead"></span><span class="thumbnail-editorial-title"></span><span class="thumbnail-editorial-rule"></span><span class="thumbnail-columns"></span></span>
+          <span class="design-copy"><span class="design-name">Integrated Pathways</span><span class="design-description">Monochrome scientific reading with pharmacology, biochemical, histology and pathway diagrams.</span></span>
           <span class="selection-badge">Selected</span>
         </label>
       </fieldset>
