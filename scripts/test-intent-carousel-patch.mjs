@@ -14,6 +14,7 @@ try {
   const source = await readFile(target, 'utf8');
 
   assert.match(source, /intentSearch:\s*true/);
+  assert.match(source, /strictRelevance:\s*true/);
   assert.match(source, /altTexts:\s*definition\.altTexts/);
   assert.match(source, /label:\s*definition\.label/);
   assert.match(source, /Gemini is understanding and searching/);
@@ -26,7 +27,7 @@ try {
   const syntax = spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-  console.log('Combined and queued carousel intent payload validation passed.');
+  console.log('Strict, combined and queued carousel payload validation passed.');
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
