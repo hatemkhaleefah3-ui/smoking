@@ -1,6 +1,7 @@
 import lecturePublisher from './index.js';
 import { handleImageAssetRequest } from './image-assets.js';
 import { handleMediaSearch } from './media-search.js';
+import { handlePdfExtractionRequest } from './pdf-routes.js';
 
 export default {
   async fetch(request, env, context) {
@@ -8,6 +9,8 @@ export default {
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
       return handleMediaSearch(request, env);
     }
+    const pdfResponse = await handlePdfExtractionRequest(request, env, url);
+    if (pdfResponse) return pdfResponse;
     const imageResponse = await handleImageAssetRequest(request, env, url);
     if (imageResponse) return imageResponse;
     return lecturePublisher.fetch(request, env, context);
