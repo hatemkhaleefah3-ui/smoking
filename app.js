@@ -1,14 +1,19 @@
 'use strict';
 
+const DEFAULT_EXAMPLE_URL = 'examples/lecture-output.example.json';
 const DESIGNS = {
   classic: { name: 'Classic Academic', templateUrl: 'templates/lecture-template.html' },
   enhanced: { name: 'Enhanced Modern', templateUrl: 'templates/lecture-template-enhanced.html' },
   editorial: { name: 'Editorial Journal', templateUrl: 'templates/lecture-template-editorial.html' },
-  clinical: { name: 'Clinical Notes', templateUrl: 'templates/lecture-template-clinical.html' }
+  clinical: { name: 'Clinical Notes', templateUrl: 'templates/lecture-template-clinical.html', storageDesignId: 'classic' },
+  integrated: {
+    name: 'Integrated Pathways',
+    templateUrl: 'templates/lecture-template-integrated.html',
+    exampleUrl: 'examples/lecture-system-v2.example.json',
+    storageDesignId: 'classic'
+  }
 };
-const EXAMPLE_URL = 'examples/lecture-output.example.json';
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const CLINICAL_STORAGE_DESIGN = 'classic';
 
 const clinicalStylesheet = document.createElement('link');
 clinicalStylesheet.rel = 'stylesheet';
@@ -32,16 +37,15 @@ const elements = {
   designInputs: [...document.querySelectorAll('input[name="design"]')]
 };
 
-const state = { templates: new Map(), exampleData: null, selectedFile: null, documentData: null, publication: null };
+const state = { templates: new Map(), examples: new Map(), selectedFile: null, documentData: null, publication: null };
 initialize();
 
 async function initialize() {
   bindEvents();
   selectDesignCard();
   try {
-    const [template, example] = await Promise.all([loadTemplate(selectedDesignId()), fetchJson(EXAMPLE_URL)]);
-    state.templates.set(selectedDesignId(), template);
-    state.exampleData = LectureRenderer.normalize(example);
+    const designId = selectedDesignId();
+    await Promise.all([loadTemplate(designId), loadExample(designId)]);
     elements.previewButton.disabled = false;
     setStatus('Ready. Preview the example or choose a JSON file and select Build.', 'success');
   } catch (error) {
@@ -62,7 +66,7 @@ function bindEvents() {
     selectDesignCard();
     clearPublication();
     try {
-      await loadTemplate(input.value);
+      await Promise.all([loadTemplate(input.value), loadExample(input.value)]);
       setStatus(`Selected ${DESIGNS[input.value].name}. Preview will use this design.`, 'success');
     } catch (error) {
       setStatus(error.message, 'error');
@@ -86,6 +90,15 @@ function selectDesignCard() {
   document.querySelectorAll('.design-option').forEach((card) => card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked)));
 }
 
+function selectDesignById(designId) {
+  if (!DESIGNS[designId]) return false;
+  const input = elements.designInputs.find((candidate) => candidate.value === designId);
+  if (!input) return false;
+  input.checked = true;
+  selectDesignCard();
+  return true;
+}
+
 function chooseFile(file) {
   state.selectedFile = file;
   clearPublication();
@@ -102,6 +115,9 @@ async function buildSelectedFile() {
   try {
     const text = await file.text();
     state.documentData = LectureRenderer.normalize(JSON.parse(LectureRenderer.stripOptionalCodeFence(text)));
+    if (typeof state.documentData?._design === 'string' && selectDesignById(state.documentData._design)) {
+      await loadTemplate(state.documentData._design);
+    }
     clearPublication();
     updateDocumentDetails(state.documentData);
     setStatus(`Built ${file.name} successfully. Select Preview to publish and open its permanent link.`, 'success');
@@ -121,7 +137,7 @@ async function previewLecture() {
   try {
     if (!state.documentData) {
       const designId = selectedDesignId();
-      const html = LectureRenderer.render(state.exampleData, await loadTemplate(designId), designId);
+      const html = LectureRenderer.render(await loadExample(designId), await loadTemplate(designId), designId);
       previewWindow.document.open();
       previewWindow.document.write(html);
       previewWindow.document.close();
@@ -140,14 +156,16 @@ async function previewLecture() {
 async function publishCurrentLecture() {
   const designId = selectedDesignId();
   if (state.publication?.designId === designId) return state.publication;
-  const publicationData = designId === 'clinical' ? { ...state.documentData, _design: 'clinical' } : state.documentData;
+  const design = DESIGNS[designId];
+  const storageDesignId = design.storageDesignId || designId;
+  const publicationData = storageDesignId === designId ? state.documentData : { ...state.documentData, _design: designId };
   const payload = JSON.stringify(publicationData);
   if (new Blob([payload]).size > MAX_UPLOAD_BYTES) throw new Error('The normalized lecture is larger than the 25 MB publishing limit.');
   const response = await fetch('/api/lectures', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'X-Design-Id': designId === 'clinical' ? CLINICAL_STORAGE_DESIGN : designId,
+      'X-Design-Id': storageDesignId,
       'X-Schema-Version': state.documentData.schemaVersion,
       'X-Lecture-Title': encodeURIComponent(state.documentData.document.title.slice(0, 200))
     },
@@ -184,6 +202,15 @@ async function loadTemplate(designId) {
   const template = await response.text();
   state.templates.set(designId, template);
   return template;
+}
+
+async function loadExample(designId) {
+  if (state.examples.has(designId)) return state.examples.get(designId);
+  const design = DESIGNS[designId];
+  if (!design) throw new Error('Unsupported lecture design.');
+  const example = LectureRenderer.normalize(await fetchJson(design.exampleUrl || DEFAULT_EXAMPLE_URL));
+  state.examples.set(designId, example);
+  return example;
 }
 
 async function fetchJson(url) {
