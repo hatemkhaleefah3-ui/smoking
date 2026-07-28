@@ -3,6 +3,8 @@ import { readFile, stat } from 'node:fs/promises';
 
 const bundle = await readFile(new URL('../dist/_worker.js', import.meta.url), 'utf8');
 const pdfRuntime = await readFile(new URL('../dist/pdf-extractor-runtime.js', import.meta.url), 'utf8');
+const pdfAutofill = await readFile(new URL('../dist/pdf-image-autofill.js', import.meta.url), 'utf8');
+const pdfAutofillCss = await readFile(new URL('../dist/pdf-image-autofill.css', import.meta.url), 'utf8');
 const pdfWasm = await stat(new URL('../dist/vendor/mupdf-wasm.wasm', import.meta.url));
 
 assert.match(bundle, /\/api\/search/);
@@ -16,7 +18,12 @@ assert.match(bundle, /ASSETS\.fetch/);
 assert.doesNotMatch(bundle, /from\s+["']\.\//);
 assert.doesNotMatch(bundle, /import\s+["']\.\//);
 assert.match(pdfRuntime, /preserve-images/);
+assert.match(pdfRuntime, /extractPdfImages/);
 assert.match(pdfRuntime, /This PDF has no extractable embedded images/);
+assert.match(pdfAutofill, /collectPdfImportPlan/);
+assert.match(pdfAutofill, /DataTransfer/);
+assert.match(pdfAutofill, /pdf-extractor-runtime\.js/);
+assert.match(pdfAutofillCss, /pdf-autofill-card/);
 assert.ok(pdfWasm.size > 1_000_000, 'MuPDF WASM asset should be present as a static file.');
 
-console.log('Advanced Mode Worker and PDF runtime validation passed.');
+console.log('Advanced Mode Worker, PDF runtime and imoo auto-fill validation passed.');
