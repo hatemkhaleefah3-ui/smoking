@@ -17,15 +17,7 @@ try {
       assert.equal(options.headers['x-goog-api-key'], 'test-key');
       return Response.json({ candidates: [{ content: { parts: [{ text: 'human heart anatomy' }] } }] });
     }
-    return Response.json({
-      query: {
-        pages: {
-          1: { imageinfo: [{ url: 'https://upload.wikimedia.org/heart-one.jpg' }] },
-          2: { imageinfo: [{ url: 'https://upload.wikimedia.org/heart-two.jpg' }] },
-          3: { imageinfo: [{ url: 'http://example.com/not-secure.jpg' }] }
-        }
-      }
-    });
+    return commonsResponse('heart-one.jpg', 'heart-two.jpg');
   };
 
   // No DB binding is provided: this proves /api/search is handled before the
@@ -41,12 +33,44 @@ try {
   assert.match(requestedUrls[1], /gsrsearch=human\+heart\+anatomy/);
   assert.match(requestedUrls[1], /gsrlimit=5/);
 
-  globalThis.fetch = async () => new Response('failed', { status: 500 });
-  const failureResponse = await worker.fetch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'test-key' }, {});
-  assert.equal(failureResponse.status, 502);
-  assert.deepEqual(await failureResponse.json(), { error: 'Something went wrong' });
+  // A missing key must not break image search. The endpoint should call
+  // Wikimedia directly with the visitor's original query.
+  const missingKeyUrls = [];
+  globalThis.fetch = async (url) => {
+    missingKeyUrls.push(String(url));
+    assert.doesNotMatch(String(url), /generativelanguage\.googleapis\.com/);
+    return commonsResponse('heart-fallback.jpg');
+  };
+  const missingKeyResponse = await worker.fetch(request({ query: 'Heart' }), {}, {});
+  assert.equal(missingKeyResponse.status, 200);
+  assert.deepEqual(await missingKeyResponse.json(), {
+    images: ['https://upload.wikimedia.org/heart-fallback.jpg']
+  });
+  assert.match(missingKeyUrls[0], /gsrsearch=Heart/);
 
-  console.log('Media search routing validation passed.');
+  // Invalid, restricted, or unavailable Gemini access should also fall back to
+  // Wikimedia rather than returning a generic frontend failure.
+  let fallbackCalls = 0;
+  globalThis.fetch = async (url) => {
+    fallbackCalls += 1;
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      return new Response('forbidden', { status: 403 });
+    }
+    return commonsResponse('lungs-fallback.jpg');
+  };
+  const geminiFailureResponse = await worker.fetch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'invalid-key' }, {});
+  assert.equal(geminiFailureResponse.status, 200);
+  assert.equal(fallbackCalls, 2);
+  assert.deepEqual(await geminiFailureResponse.json(), {
+    images: ['https://upload.wikimedia.org/lungs-fallback.jpg']
+  });
+
+  globalThis.fetch = async () => new Response('failed', { status: 500 });
+  const wikimediaFailureResponse = await worker.fetch(request({ query: 'lungs' }), {}, {});
+  assert.equal(wikimediaFailureResponse.status, 502);
+  assert.deepEqual(await wikimediaFailureResponse.json(), { error: 'Something went wrong' });
+
+  console.log('Media search routing and Gemini fallback validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -56,5 +80,16 @@ function request(body) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
     body: JSON.stringify(body)
+  });
+}
+
+function commonsResponse(...filenames) {
+  return Response.json({
+    query: {
+      pages: Object.fromEntries(filenames.map((filename, index) => [
+        index + 1,
+        { imageinfo: [{ url: `https://upload.wikimedia.org/${filename}` }] }
+      ]))
+    }
   });
 }
