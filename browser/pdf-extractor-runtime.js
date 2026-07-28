@@ -100,35 +100,39 @@ function extractImages(mupdf, pdfBytes, selectors) {
 
 function extractPageImages(mupdf, document, pageNumber, requestedPositions) {
   let page;
+  let device;
   try {
     page = document.loadPage(pageNumber - 1);
-    const imageStack = page.getImages() || [];
-    const positions = requestedPositions || imageStack.map((_, index) => index + 1);
+    const requested = requestedPositions ? new Set(requestedPositions) : null;
     const extracted = [];
+    let position = 0;
 
-    for (const position of positions) {
-      if (position > imageStack.length) {
-        throw new Error(`Requested image at page ${pageNumber}, position ${position} does not exist; page ${pageNumber} has ${imageStack.length} embedded image${imageStack.length === 1 ? '' : 's'}.`);
+    device = new mupdf.Device({
+      fillImage(image) {
+        position += 1;
+        if (!requested || requested.has(position)) {
+          extracted.push({
+            page: pageNumber,
+            position,
+            filename: `page-${pageNumber}-image-${position}.png`,
+            bytes: encodeImageAsPng(mupdf, image)
+          });
+        }
       }
-      const stackEntry = imageStack[position - 1];
-      const image = stackEntry?.image || stackEntry;
-      if (!image || typeof image.toPixmap !== 'function') {
-        throw new Error(`The image at page ${pageNumber}, position ${position} could not be decoded.`);
-      }
+    });
 
-      try {
-        extracted.push({
-          page: pageNumber,
-          position,
-          filename: `page-${pageNumber}-image-${position}.png`,
-          bytes: encodeImageAsPng(mupdf, image)
-        });
-      } finally {
-        safeDestroy(image);
+    page.runPageContents(device, mupdf.Matrix.identity);
+
+    if (requestedPositions) {
+      const missing = requestedPositions.find((candidate) => candidate > position);
+      if (missing) {
+        throw new Error(`Requested image at page ${pageNumber}, position ${missing} does not exist; page ${pageNumber} has ${position} embedded image${position === 1 ? '' : 's'}.`);
       }
     }
+
     return extracted;
   } finally {
+    safeDestroy(device);
     safeDestroy(page);
   }
 }
