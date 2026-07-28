@@ -1,15 +1,28 @@
 const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_QUERY_LENGTH = 200;
 const REQUEST_TIMEOUT_MS = 12_000;
-const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.2 (https://github.com/hatemkhaleefah3-ui/smoking)';
-const MEDICAL_VISUAL_TERMS = new Set([
-  'heart', 'brain', 'lung', 'lungs', 'kidney', 'kidneys', 'liver', 'stomach',
-  'intestine', 'intestines', 'colon', 'pancreas', 'spleen', 'bladder', 'uterus',
-  'ovary', 'ovaries', 'prostate', 'eye', 'eyes', 'ear', 'ears', 'skin', 'bone',
-  'bones', 'skeleton', 'spine', 'skull', 'muscle', 'muscles', 'artery', 'arteries',
-  'vein', 'veins', 'blood', 'neuron', 'neurons', 'nerve', 'nerves', 'cell', 'cells'
+const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.3 (https://github.com/hatemkhaleefah3-ui/smoking)';
+const VISUAL_TYPES = Object.freeze([
+  'labeled anatomical diagram',
+  'histology micrograph',
+  'microscopy image',
+  'biochemical pathway diagram',
+  'biological process diagram',
+  'molecular structure diagram',
+  'chemical reaction scheme',
+  'technical schematic',
+  'cross-section diagram',
+  'block diagram',
+  'flowchart',
+  'scientific illustration',
+  'data graph',
+  'geographic map',
+  'scientific photograph',
+  'archival photograph',
+  'geometric diagram'
 ]);
-const NON_MEDICAL_HINTS = /\b(symbol|emoji|icon|logo|love|valentine|card|band|song|music|album|film|movie|game|tattoo|jewelry|shape)\b/i;
+const VISUAL_TYPE_SET = new Set(VISUAL_TYPES);
+const GENERIC_FALLBACK_CONTEXT = 'educational scientific technical diagram illustration';
 
 export async function handleMediaSearch(request, env) {
   if (request.method !== 'POST') {
@@ -32,16 +45,16 @@ export async function handleMediaSearch(request, env) {
   const query = typeof input?.query === 'string' ? input.query.trim().slice(0, MAX_QUERY_LENGTH) : '';
   if (!query) return json({ error: 'Query is required.' }, 400);
 
-  const deterministicTerm = buildDeterministicSearchTerm(query);
-  const refinement = await refineSearchTermSafely(query, deterministicTerm, env);
+  const fallbackTerm = buildGenericFallbackTerm(query);
+  const refinement = await refineSearchTermSafely(query, fallbackTerm, env);
 
   try {
     let images = await searchWikimediaCommons(refinement.term);
 
-    // Gemini can occasionally produce a phrase that is too narrow. Retry with the
-    // deterministic educational query rather than the ambiguous raw input.
-    if (images.length === 0 && normalizeTerm(refinement.term) !== normalizeTerm(deterministicTerm)) {
-      images = await searchWikimediaCommons(deterministicTerm);
+    // Gemini can occasionally produce a query that is too narrow. Retry with a
+    // generic academic visual query rather than the ambiguous raw input.
+    if (images.length === 0 && normalizeTerm(refinement.term) !== normalizeTerm(fallbackTerm)) {
+      images = await searchWikimediaCommons(fallbackTerm);
     }
 
     return json({ images });
@@ -55,26 +68,25 @@ export async function handleMediaSearch(request, env) {
   }
 }
 
-async function refineSearchTermSafely(query, deterministicTerm, env) {
+async function refineSearchTermSafely(query, fallbackTerm, env) {
   if (!env?.GEMINI_API_KEY) {
     console.warn(JSON.stringify({
       event: 'media_search_fallback',
       stage: 'configuration',
-      message: 'GEMINI_API_KEY is missing; using deterministic educational refinement.'
+      message: 'GEMINI_API_KEY is missing; using generic academic refinement.'
     }));
-    return { term: deterministicTerm, usedGemini: false };
+    return { term: fallbackTerm, usedGemini: false };
   }
 
   try {
-    const geminiTerm = await refineSearchTerm(query, env);
-    return { term: enforceEducationalSpecificity(query, geminiTerm), usedGemini: true };
+    return { term: await refineSearchTerm(query, env), usedGemini: true };
   } catch (error) {
     console.warn(JSON.stringify({
       event: 'media_search_fallback',
       stage: error?.stage || 'gemini',
       message: error instanceof Error ? error.message : String(error)
     }));
-    return { term: deterministicTerm, usedGemini: false };
+    return { term: fallbackTerm, usedGemini: false };
   }
 }
 
@@ -84,18 +96,31 @@ async function refineSearchTerm(query, env) {
     : DEFAULT_GEMINI_MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const prompt = [
-    'Create one precise English Wikimedia Commons image-search phrase for an educational lecture.',
-    'Correct spelling and translate when needed.',
-    'Resolve ambiguous short inputs toward the most useful educational visual meaning.',
-    'For human organs, anatomy, cells, or body parts, include human/anatomy plus diagram or medical illustration.',
-    'Avoid songs, sheet music, quotations, logos, symbols, emojis, and decorative graphics unless the user explicitly asks for them.',
-    'Use 5 to 10 concrete keywords likely to appear in Wikimedia file titles or descriptions.',
-    'Examples:',
-    'Heart -> human heart anatomy diagram medical illustration',
-    'Lungs -> human lungs respiratory anatomy diagram medical illustration',
-    'Mars -> planet Mars surface photograph NASA',
-    'Heart symbol -> red heart symbol icon',
-    `User text: ${query}`
+    'You are an academic visual-search planner for Wikimedia Commons.',
+    'Convert the user input into a precise English query for one useful educational image.',
+    '',
+    'First infer the canonical topic and its academic or technical domain. Resolve ambiguity using the most likely lecture or textbook meaning unless the user explicitly states another intent.',
+    'Then choose the visual format that best represents that topic:',
+    '- anatomy or macroscopic body structure -> labeled anatomical diagram',
+    '- tissue architecture or pathology -> histology micrograph',
+    '- cells, microbes, or subcellular structures -> microscopy image',
+    '- metabolism, signaling, or enzyme sequences -> biochemical pathway diagram',
+    '- biological cycles, mechanisms, or staged processes -> biological process diagram',
+    '- molecules or macromolecules -> molecular structure diagram',
+    '- chemical transformations -> chemical reaction scheme',
+    '- machines, circuits, devices, or engineering systems -> technical schematic, cross-section diagram, or block diagram',
+    '- algorithms, software, workflows, or decision logic -> flowchart or block diagram',
+    '- quantitative relationships -> data graph',
+    '- spatial or geographic topics -> geographic map',
+    '- astronomy, field science, specimens, or observable phenomena -> scientific photograph',
+    '- historical events or people -> archival photograph when appropriate',
+    '- geometry or mathematical constructions -> geometric diagram',
+    '- otherwise -> scientific illustration',
+    '',
+    'Build a concise search phrase containing the canonical topic, domain context, selected visual format, and up to four discriminating qualifiers.',
+    'The phrase must be specific enough to avoid unrelated meanings, decorative art, logos, quotations, sheet music, plaques, and generic stock imagery unless explicitly requested.',
+    'Do not return the raw input by itself. Do not include commentary or mention Wikimedia Commons.',
+    `User input: ${query}`
   ].join('\n');
 
   const response = await fetchWithTimeout(endpoint, {
@@ -107,17 +132,32 @@ async function refineSearchTerm(query, env) {
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
-        maxOutputTokens: 96,
+        maxOutputTokens: 160,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
           properties: {
-            searchTerm: {
+            canonicalTopic: {
               type: 'STRING',
-              description: 'A precise English Wikimedia Commons image search phrase containing 5 to 10 concrete visual keywords.'
+              description: 'The disambiguated canonical English name of the academic or technical topic.'
+            },
+            domain: {
+              type: 'STRING',
+              description: 'The most relevant academic or technical field, such as biochemistry, histology, electrical engineering, computer science, geology, or history.'
+            },
+            visualType: {
+              type: 'STRING',
+              enum: VISUAL_TYPES,
+              description: 'The single visual format that best communicates this topic.'
+            },
+            qualifiers: {
+              type: 'ARRAY',
+              items: { type: 'STRING' },
+              maxItems: 4,
+              description: 'Zero to four concise terms that improve precision, such as enzymes, labeled, cross section, microscopy, or mechanism.'
             }
           },
-          required: ['searchTerm']
+          required: ['canonicalTopic', 'domain', 'visualType', 'qualifiers']
         }
       }
     })
@@ -129,7 +169,15 @@ async function refineSearchTerm(query, env) {
     throw error;
   }
 
-  const result = await response.json();
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    const error = new Error('Gemini returned invalid JSON.');
+    error.stage = 'gemini';
+    throw error;
+  }
+
   const responseText = (result?.candidates?.[0]?.content?.parts || [])
     .map((part) => typeof part?.text === 'string' ? part.text : '')
     .join(' ')
@@ -137,47 +185,54 @@ async function refineSearchTerm(query, env) {
     .replace(/\s*```$/i, '')
     .trim();
 
-  let refinedTerm = '';
+  let plan;
   try {
-    const structured = JSON.parse(responseText);
-    refinedTerm = typeof structured?.searchTerm === 'string' ? structured.searchTerm : '';
+    plan = JSON.parse(responseText);
   } catch {
-    // Retain compatibility if a model ignores the requested JSON schema.
-    refinedTerm = responseText;
-  }
-
-  refinedTerm = sanitizeSearchTerm(refinedTerm);
-  if (!refinedTerm) {
-    const error = new Error('Gemini returned an empty search term.');
+    const error = new Error('Gemini did not return the required search plan.');
     error.stage = 'gemini';
     throw error;
   }
 
-  return refinedTerm;
+  return buildSearchTermFromPlan(plan);
 }
 
-function enforceEducationalSpecificity(query, refinedTerm) {
-  const cleanTerm = sanitizeSearchTerm(refinedTerm);
-  if (!isMedicalVisualQuery(query)) return cleanTerm || buildDeterministicSearchTerm(query);
+function buildSearchTermFromPlan(plan) {
+  const canonicalTopic = sanitizeSearchTerm(plan?.canonicalTopic);
+  const domain = sanitizeSearchTerm(plan?.domain);
+  const visualType = sanitizeSearchTerm(plan?.visualType);
+  const qualifiers = Array.isArray(plan?.qualifiers)
+    ? plan.qualifiers.map(sanitizeSearchTerm).filter(Boolean).slice(0, 4)
+    : [];
 
-  const normalized = normalizeTerm(cleanTerm);
-  const hasHumanContext = /\b(human|anatomy|anatomical|medical)\b/.test(normalized);
-  const hasVisualContext = /\b(diagram|illustration|cross section|medical image|anatomical plate)\b/.test(normalized);
-  if (hasHumanContext && hasVisualContext) return cleanTerm;
+  if (!canonicalTopic || !domain || !VISUAL_TYPE_SET.has(visualType)) {
+    const error = new Error('Gemini returned an incomplete or unsupported search plan.');
+    error.stage = 'gemini';
+    throw error;
+  }
 
-  return buildDeterministicSearchTerm(query);
+  const parts = [canonicalTopic, domain, visualType, ...qualifiers];
+  const uniqueParts = [];
+  const seen = new Set();
+  for (const part of parts) {
+    const normalized = normalizeTerm(part);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    uniqueParts.push(part);
+  }
+
+  const term = sanitizeSearchTerm(uniqueParts.join(' '));
+  if (!term || normalizeTerm(term) === normalizeTerm(canonicalTopic)) {
+    const error = new Error('Gemini search plan was not specific enough.');
+    error.stage = 'gemini';
+    throw error;
+  }
+  return term;
 }
 
-function buildDeterministicSearchTerm(query) {
+function buildGenericFallbackTerm(query) {
   const cleanQuery = sanitizeSearchTerm(query);
-  if (!isMedicalVisualQuery(cleanQuery)) return cleanQuery;
-  return `human ${normalizeTerm(cleanQuery)} anatomy diagram medical illustration`;
-}
-
-function isMedicalVisualQuery(query) {
-  if (NON_MEDICAL_HINTS.test(query)) return false;
-  const tokens = normalizeTerm(query).split(/[^a-z0-9]+/).filter(Boolean);
-  return tokens.some((token) => MEDICAL_VISUAL_TERMS.has(token));
+  return sanitizeSearchTerm(`${cleanQuery} ${GENERIC_FALLBACK_CONTEXT}`);
 }
 
 async function searchWikimediaCommons(refinedTerm) {
