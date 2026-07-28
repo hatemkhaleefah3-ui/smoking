@@ -1,53 +1,53 @@
 const DEFAULT_MAX_EXTRACTED_IMAGE_BYTES = 64 * 1024 * 1024;
 const MAX_REQUESTED_IMAGES = 500;
 const MAX_REQUESTED_JSON_BYTES = 16 * 1024;
+const MAX_FILENAME_BYTES = 1024;
 
 export async function createPdfExtraction(request, env, url, { HttpError, json }) {
-  const contentType = request.headers.get('Content-Type') || '';
-  if (!contentType.toLowerCase().startsWith('multipart/form-data')) {
-    throw new HttpError(415, 'Upload the extracted artifact as multipart form data.');
-  }
+  if (!request.body) throw new HttpError(400, 'The extracted result upload is empty.');
 
   const maximumResultBytes = integerEnv(env.MAX_EXTRACTED_IMAGE_BYTES, DEFAULT_MAX_EXTRACTED_IMAGE_BYTES);
   const declaredLength = Number(request.headers.get('Content-Length') || 0);
-  if (declaredLength > maximumResultBytes + 1024 * 1024) {
+  if (declaredLength <= 0) throw new HttpError(411, 'The extracted result size is required.');
+  if (declaredLength > maximumResultBytes) {
     throw new HttpError(413, `The extracted result exceeds the ${formatMegabytes(maximumResultBytes)} MB limit.`);
   }
 
-  let form;
-  try { form = await request.formData(); }
-  catch { throw new HttpError(400, 'The extracted result upload could not be read.'); }
-
-  const artifact = form.get('artifact');
-  if (!(artifact instanceof File)) throw new HttpError(400, 'An extracted PNG or ZIP artifact is required.');
-  if (artifact.size === 0) throw new HttpError(400, 'The extracted result is empty.');
-  if (artifact.size > maximumResultBytes) {
-    throw new HttpError(413, `The extracted result exceeds the ${formatMegabytes(maximumResultBytes)} MB limit.`);
-  }
-
-  const sourceFilenameField = form.get('sourceFilename');
-  if (sourceFilenameField instanceof File) throw new HttpError(400, 'The source filename is invalid.');
-  const sourceFilename = cleanSourceFilename(sourceFilenameField);
-
-  const imageCountField = form.get('imageCount');
-  if (imageCountField instanceof File) throw new HttpError(400, 'The image count is invalid.');
-  const imageCount = Number(imageCountField);
+  const imageCount = Number(request.headers.get('X-PDF-Image-Count'));
   if (!Number.isSafeInteger(imageCount) || imageCount < 1 || imageCount > MAX_REQUESTED_IMAGES) {
     throw new HttpError(400, `The image count must be an integer between 1 and ${MAX_REQUESTED_IMAGES}.`);
   }
 
-  const requestedJsonField = form.get('requestedJson');
-  if (requestedJsonField instanceof File) throw new HttpError(400, 'The requested JSON is invalid.');
-  const requestedJson = normalizeRequestedJson(requestedJsonField, HttpError);
+  const sourceFilename = cleanSourceFilename(decodeHeader(
+    request.headers.get('X-PDF-Source-Filename'),
+    'The source filename is invalid.',
+    HttpError
+  ));
+  const requestedJson = normalizeRequestedJson(decodeHeader(
+    request.headers.get('X-PDF-Requested-Json'),
+    'The requested JSON is invalid.',
+    HttpError,
+    true
+  ), HttpError);
 
-  const artifactType = classifyArtifact(artifact, imageCount, HttpError);
-  const outputFilename = cleanOutputFilename(artifact.name, sourceFilename, artifactType.extension);
+  const artifactType = classifyArtifact(
+    request.headers.get('Content-Type') || '',
+    imageCount,
+    HttpError
+  );
+  const artifactFilename = decodeHeader(
+    request.headers.get('X-PDF-Artifact-Filename'),
+    'The output filename is invalid.',
+    HttpError
+  );
+  const outputFilename = cleanOutputFilename(artifactFilename, sourceFilename, artifactType.extension);
   const id = crypto.randomUUID();
   const outputKey = `pdf-extractions/${id}/download.${artifactType.extension}`;
   const createdAt = new Date().toISOString();
 
+  let storedObject;
   try {
-    await env.PDF_EXTRACTIONS.put(outputKey, artifact.stream(), {
+    storedObject = await env.PDF_EXTRACTIONS.put(outputKey, request.body, {
       httpMetadata: { contentType: artifactType.contentType },
       customMetadata: {
         sourceFilename,
@@ -56,6 +56,7 @@ export async function createPdfExtraction(request, env, url, { HttpError, json }
       }
     });
 
+    const outputSizeBytes = storedObject?.size || declaredLength;
     await env.DB.prepare(`
       INSERT INTO pdf_extraction_jobs (
         id, source_filename, requested_json, image_count,
@@ -69,22 +70,27 @@ export async function createPdfExtraction(request, env, url, { HttpError, json }
       outputKey,
       outputFilename,
       artifactType.contentType,
-      artifact.size,
+      outputSizeBytes,
       createdAt
     ).run();
   } catch (error) {
     try { await env.PDF_EXTRACTIONS.delete(outputKey); }
     catch { /* best-effort cleanup */ }
-    throw error;
+    console.error(JSON.stringify({
+      event: 'pdf_extraction_artifact_store_failed',
+      message: error instanceof Error ? error.message : String(error)
+    }));
+    throw new HttpError(500, 'The extracted result could not be stored. Check the R2 and DB bindings, then retry.');
   }
 
+  const outputSizeBytes = storedObject?.size || declaredLength;
   console.log(JSON.stringify({
     event: 'pdf_images_stored',
     id,
     sourceFilename,
     requestedJson,
     imageCount,
-    outputSizeBytes: artifact.size
+    outputSizeBytes
   }));
 
   return json({
@@ -119,20 +125,34 @@ export async function downloadPdfExtraction(id, env, { HttpError }) {
   });
 }
 
-function classifyArtifact(artifact, imageCount, HttpError) {
-  const name = artifact.name.toLowerCase();
-  const type = artifact.type.toLowerCase();
-  const isPng = type === 'image/png' || name.endsWith('.png');
-  const isZip = type === 'application/zip' || type === 'application/x-zip-compressed' || name.endsWith('.zip');
-
-  if (isPng && !isZip) {
+function classifyArtifact(contentTypeValue, imageCount, HttpError) {
+  const contentType = String(contentTypeValue).split(';', 1)[0].trim().toLowerCase();
+  if (contentType === 'image/png') {
     if (imageCount !== 1) throw new HttpError(400, 'A PNG artifact must represent exactly one extracted image.');
     return { contentType: 'image/png', extension: 'png' };
   }
-  if (isZip && !isPng) {
+  if (contentType === 'application/zip' || contentType === 'application/x-zip-compressed') {
     return { contentType: 'application/zip', extension: 'zip' };
   }
   throw new HttpError(415, 'The extracted artifact must be a PNG or ZIP file.');
+}
+
+function decodeHeader(value, errorMessage, HttpError, allowEmpty = false) {
+  const encoded = String(value || '').trim();
+  if (!encoded) {
+    if (allowEmpty) return '';
+    throw new HttpError(400, errorMessage);
+  }
+  if (encoded.length > MAX_FILENAME_BYTES * 2 && !allowEmpty) throw new HttpError(400, errorMessage);
+  try {
+    const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    throw new HttpError(400, errorMessage);
+  }
 }
 
 function normalizeRequestedJson(value, HttpError) {
