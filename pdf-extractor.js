@@ -82,7 +82,7 @@
     setLoading(true);
     try {
       setStatus('Loading the PDF engine in your browser…', 'neutral');
-      const { extractPdfArtifact } = await import('/pdf-extractor-runtime.js?v=device-images-1');
+      const { extractPdfArtifact } = await import('/pdf-extractor-runtime.js?v=structured-images-1');
 
       setStatus('Reading the PDF and extracting its embedded images…', 'neutral');
       const artifact = await extractPdfArtifact(file, elements.selectors.value);
