@@ -84,13 +84,14 @@ export async function patchIntentCarousel(distDirectory) {
         for (const url of result.images || []) {
           if (typeof url !== 'string' || seen.has(url)) continue;
           seen.add(url);
-          cardState.candidates.push({ key: \`wikimedia:\${url}\`, source: 'Wikimedia', label: altText, previewUrl: url, remoteUrl: url, file: null, revoke: false });
+          cardState.candidates.push({ key: `wikimedia:${url}`, source: 'Wikimedia', label: altText, previewUrl: url, remoteUrl: url, file: null, revoke: false });
         }
       }`, `      const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           intentSearch: true,
+          strictRelevance: true,
           imageId: definition.id,
           label: definition.label,
           altTexts: definition.altTexts
@@ -103,7 +104,7 @@ export async function patchIntentCarousel(distDirectory) {
       for (const url of result.images || []) {
         if (typeof url !== 'string' || seen.has(url)) continue;
         seen.add(url);
-        cardState.candidates.push({ key: \`wikimedia:\${url}\`, source: 'Wikimedia', label: candidateLabel, previewUrl: url, remoteUrl: url, file: null, revoke: false });
+        cardState.candidates.push({ key: `wikimedia:${url}`, source: 'Wikimedia', label: candidateLabel, previewUrl: url, remoteUrl: url, file: null, revoke: false });
       }`, 'single intent request');
 
   await writeFile(path, source);
