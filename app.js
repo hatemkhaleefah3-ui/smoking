@@ -1,6 +1,5 @@
 'use strict';
 
-const DEFAULT_EXAMPLE_URL = 'examples/lecture-output.example.json';
 const DESIGNS = {
   classic: { name: 'Classic Academic', templateUrl: 'templates/lecture-template.html' },
   enhanced: { name: 'Enhanced Modern', templateUrl: 'templates/lecture-template-enhanced.html' },
@@ -9,7 +8,6 @@ const DESIGNS = {
   integrated: {
     name: 'Integrated Pathways',
     templateUrl: 'templates/lecture-template-integrated.html',
-    exampleUrl: 'examples/lecture-system-v2.example.json',
     storageDesignId: 'classic'
   }
 };
@@ -23,6 +21,7 @@ document.head.append(clinicalStylesheet);
 const elements = {
   fileInput: document.querySelector('#file-input'),
   buildButton: document.querySelector('#build-button'),
+  continueButton: document.querySelector('#continue-button'),
   previewButton: document.querySelector('#preview-button'),
   copyButton: document.querySelector('#copy-link-button'),
   dropZone: document.querySelector('#drop-zone'),
@@ -33,30 +32,42 @@ const elements = {
   detailLanguage: document.querySelector('#detail-language'),
   detailSections: document.querySelector('#detail-sections'),
   detailBlocks: document.querySelector('#detail-blocks'),
+  imageImportPanel: document.querySelector('#image-import-panel'),
+  imageImportSummary: document.querySelector('#image-import-summary'),
+  imageImportList: document.querySelector('#image-import-list'),
   publishedLink: document.querySelector('#published-link'),
   designInputs: [...document.querySelectorAll('input[name="design"]')]
 };
 
-const state = { templates: new Map(), examples: new Map(), selectedFile: null, documentData: null, publication: null };
+const state = {
+  templates: new Map(),
+  selectedFile: null,
+  sourceData: null,
+  documentData: null,
+  imageSlots: [],
+  publication: null,
+  busy: false
+};
+
 initialize();
 
 async function initialize() {
   bindEvents();
   selectDesignCard();
+  resetBuiltLecture();
   try {
-    const designId = selectedDesignId();
-    await Promise.all([loadTemplate(designId), loadExample(designId)]);
-    elements.previewButton.disabled = false;
-    setStatus('Ready. Preview the example or choose a JSON file and select Build.', 'success');
+    await loadTemplate(selectedDesignId());
+    setStatus('Ready. Import a lecture JSON file and select Build.', 'success');
   } catch (error) {
-    setStatus('Could not load the designs or example lecture. Open the deployed Cloudflare site or use a local web server.', 'error');
+    setStatus('Could not load the selected design. Open the deployed Cloudflare site or use a local web server.', 'error');
     console.error(error);
   }
 }
 
 function bindEvents() {
   elements.buildButton.addEventListener('click', buildSelectedFile);
-  elements.previewButton.addEventListener('click', previewLecture);
+  elements.continueButton.addEventListener('click', continueToPublication);
+  elements.previewButton.addEventListener('click', previewPublishedLecture);
   elements.copyButton.addEventListener('click', copyPublishedLink);
   elements.fileInput.addEventListener('change', () => {
     const file = elements.fileInput.files[0];
@@ -66,8 +77,13 @@ function bindEvents() {
     selectDesignCard();
     clearPublication();
     try {
-      await Promise.all([loadTemplate(input.value), loadExample(input.value)]);
-      setStatus(`Selected ${DESIGNS[input.value].name}. Preview will use this design.`, 'success');
+      await loadTemplate(input.value);
+      if (state.documentData) {
+        updateContinueAvailability();
+        setStatus(`Selected ${DESIGNS[input.value].name}. Select Continue to create a link with this design.`, 'success');
+      } else {
+        setStatus(`Selected ${DESIGNS[input.value].name}. Import a JSON file and select Build.`, 'success');
+      }
     } catch (error) {
       setStatus(error.message, 'error');
     }
@@ -87,7 +103,9 @@ function bindEvents() {
 }
 
 function selectDesignCard() {
-  document.querySelectorAll('.design-option').forEach((card) => card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked)));
+  document.querySelectorAll('.design-option').forEach((card) => {
+    card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked));
+  });
 }
 
 function selectDesignById(designId) {
@@ -101,56 +119,207 @@ function selectDesignById(designId) {
 
 function chooseFile(file) {
   state.selectedFile = file;
-  clearPublication();
+  resetBuiltLecture();
   elements.selectedFileName.textContent = `Selected: ${file.name} (${formatBytes(file.size)})`;
-  if (file.size > MAX_UPLOAD_BYTES) return setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
-  setStatus(`Selected ${file.name}. Select Build to validate it.`, 'neutral');
+  if (file.size > MAX_UPLOAD_BYTES) {
+    setStatus('This JSON file is larger than the current 25 MB publishing limit.', 'error');
+    return;
+  }
+  setStatus(`Selected ${file.name}. Select Build to validate it and discover its image labels.`, 'neutral');
 }
 
 async function buildSelectedFile() {
   const file = state.selectedFile || elements.fileInput.files[0];
   if (!file) return setStatus('Choose a JSON file first.', 'error');
   if (!file.name.toLowerCase().endsWith('.json')) return setStatus('The selected file must use the .json extension.', 'error');
-  if (file.size > MAX_UPLOAD_BYTES) return setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
+  if (file.size > MAX_UPLOAD_BYTES) return setStatus('This JSON file is larger than the current 25 MB publishing limit.', 'error');
+
+  setBusy(true, 'Building…');
   try {
     const text = await file.text();
-    state.documentData = LectureRenderer.normalize(JSON.parse(LectureRenderer.stripOptionalCodeFence(text)));
-    if (typeof state.documentData?._design === 'string' && selectDesignById(state.documentData._design)) {
-      await loadTemplate(state.documentData._design);
+    const sourceData = JSON.parse(LectureRenderer.stripOptionalCodeFence(text));
+    const documentData = LectureRenderer.normalize(sourceData);
+
+    state.sourceData = sourceData;
+    state.documentData = documentData;
+    state.imageSlots = ImageImportWorkflow.collectImageSlots(sourceData).map((slot) => ({
+      ...slot,
+      file: null,
+      previewUrl: ''
+    }));
+
+    if (typeof documentData?._design === 'string' && selectDesignById(documentData._design)) {
+      await loadTemplate(documentData._design);
     }
+
     clearPublication();
-    updateDocumentDetails(state.documentData);
-    setStatus(`Built ${file.name} successfully. Select Preview to publish and open its permanent link.`, 'success');
+    updateDocumentDetails(documentData);
+    renderImageImports();
+    elements.continueButton.hidden = false;
+    updateContinueAvailability();
+
+    const imageMessage = state.imageSlots.length
+      ? ` Import ${state.imageSlots.length} labeled image${state.imageSlots.length === 1 ? '' : 's'}, then select Continue.`
+      : ' No image blocks were found; select Continue to publish.';
+    setStatus(`Built ${file.name} successfully.${imageMessage}`, 'success');
   } catch (error) {
-    state.documentData = null;
-    clearPublication();
-    elements.documentDetails.hidden = true;
+    resetBuiltLecture();
     setStatus(`Build failed: ${error.message}`, 'error');
+  } finally {
+    setBusy(false);
   }
 }
 
-async function previewLecture() {
-  const previewWindow = window.open('', '_blank');
-  if (!previewWindow) return setStatus('The preview window was blocked. Allow pop-ups and try again.', 'error');
-  previewWindow.document.write('<!doctype html><title>Loading…</title><p style="font-family:system-ui;padding:24px">Preparing lecture preview…</p>');
-  previewWindow.document.close();
-  try {
-    if (!state.documentData) {
-      const designId = selectedDesignId();
-      const html = LectureRenderer.render(await loadExample(designId), await loadTemplate(designId), designId);
-      previewWindow.document.open();
-      previewWindow.document.write(html);
-      previewWindow.document.close();
-      setStatus(`Opened the example lecture with ${DESIGNS[designId].name}.`, 'success');
-      return;
-    }
-    const publication = await publishCurrentLecture();
-    previewWindow.location.replace(publication.url);
-    setStatus(`Published “${state.documentData.document.title}”. Its permanent link is ready to share.`, 'success');
-  } catch (error) {
-    showPreviewError(previewWindow, error.message || 'Publishing failed.');
-    setStatus(`Could not publish the preview: ${error.message}`, 'error');
+function renderImageImports() {
+  elements.imageImportList.replaceChildren();
+  elements.imageImportPanel.hidden = false;
+
+  if (state.imageSlots.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'image-import-empty';
+    empty.textContent = 'This lecture has no image blocks. Continue to create the previewable link.';
+    elements.imageImportList.append(empty);
+    elements.imageImportSummary.textContent = 'No image imports required.';
+    return;
   }
+
+  state.imageSlots.forEach((slot, index) => {
+    const card = document.createElement('article');
+    card.className = 'image-import-item';
+    card.dataset.ready = String(Boolean(slot.file || slot.existingSrc));
+
+    const copy = document.createElement('div');
+    copy.className = 'image-import-copy';
+    const number = document.createElement('span');
+    number.className = 'image-import-index';
+    number.textContent = `Image ${String(index + 1).padStart(2, '0')}`;
+    const label = document.createElement('strong');
+    label.className = 'image-import-label';
+    label.textContent = slot.label;
+    const context = document.createElement('small');
+    context.textContent = slot.sectionTitle
+      ? `${slot.sectionTitle}${slot.existingSrc ? ' · Existing image can be replaced' : ' · Image required'}`
+      : slot.existingSrc ? 'Existing image can be replaced' : 'Image required';
+    copy.append(number, label, context);
+
+    const preview = document.createElement('div');
+    preview.className = 'image-import-preview';
+    const previewSrc = slot.previewUrl || slot.existingSrc;
+    if (previewSrc) {
+      const image = document.createElement('img');
+      image.src = previewSrc;
+      image.alt = '';
+      preview.append(image);
+    } else {
+      preview.textContent = 'No image selected';
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'image-import-controls';
+    const inputId = `${slot.id}-input`;
+    const button = document.createElement('label');
+    button.className = 'image-file-button';
+    button.htmlFor = inputId;
+    button.textContent = slot.file || slot.existingSrc ? 'Replace image' : 'Choose image';
+    const input = document.createElement('input');
+    input.id = inputId;
+    input.type = 'file';
+    input.accept = [...ImageImportWorkflow.ACCEPTED_IMAGE_TYPES].join(',');
+    input.addEventListener('change', () => handleImageSelection(slot, input.files[0], input));
+    const fileName = document.createElement('span');
+    fileName.className = 'image-file-name';
+    fileName.textContent = slot.file?.name || (slot.existingSrc ? 'Existing image ready' : 'JPEG, PNG, WebP, GIF or AVIF · max 8 MB');
+    controls.append(button, input, fileName);
+
+    card.append(copy, preview, controls);
+    elements.imageImportList.append(card);
+  });
+
+  updateImageImportSummary();
+}
+
+function handleImageSelection(slot, file, input) {
+  const error = ImageImportWorkflow.validateImageFile(file);
+  if (error) {
+    input.value = '';
+    setStatus(`${slot.label}: ${error}`, 'error');
+    return;
+  }
+
+  if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+  slot.file = file;
+  slot.previewUrl = URL.createObjectURL(file);
+  clearPublication();
+  renderImageImports();
+  updateContinueAvailability();
+  setStatus(`Selected ${file.name} for “${slot.label}”.`, 'success');
+}
+
+function updateImageImportSummary() {
+  const ready = state.imageSlots.filter((slot) => slot.file || slot.existingSrc).length;
+  const total = state.imageSlots.length;
+  elements.imageImportSummary.textContent = `${ready} of ${total} image${total === 1 ? '' : 's'} ready.`;
+}
+
+function updateContinueAvailability() {
+  const allImagesReady = state.imageSlots.every((slot) => slot.file || slot.existingSrc);
+  elements.continueButton.disabled = state.busy || !state.documentData || !allImagesReady;
+  if (state.imageSlots.length) updateImageImportSummary();
+}
+
+async function continueToPublication() {
+  if (!state.sourceData || !state.documentData) return setStatus('Build a JSON file first.', 'error');
+  const missing = state.imageSlots.filter((slot) => !slot.file && !slot.existingSrc);
+  if (missing.length) return setStatus(`Import the image labeled “${missing[0].label}” before continuing.`, 'error');
+
+  clearPublication();
+  setBusy(true, 'Preparing…');
+  try {
+    const pending = state.imageSlots.filter((slot) => slot.file);
+    for (let index = 0; index < pending.length; index += 1) {
+      const slot = pending[index];
+      elements.continueButton.textContent = `Uploading ${index + 1}/${pending.length}…`;
+      setStatus(`Uploading “${slot.label}” (${index + 1} of ${pending.length})…`, 'neutral');
+      const uploaded = await uploadImage(slot.file, slot.label);
+      state.sourceData = ImageImportWorkflow.applyImageSources(state.sourceData, [{ path: slot.path, src: uploaded.url }]);
+      slot.existingSrc = uploaded.url;
+      slot.file = null;
+      if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+      slot.previewUrl = '';
+    }
+
+    state.documentData = LectureRenderer.normalize(state.sourceData);
+    updateDocumentDetails(state.documentData);
+    renderImageImports();
+    elements.continueButton.textContent = 'Publishing…';
+    const publication = await publishCurrentLecture();
+    elements.previewButton.hidden = false;
+    elements.previewButton.disabled = false;
+    setStatus(`The previewable link for “${state.documentData.document.title}” is ready. Select Preview to open it.`, 'success');
+    return publication;
+  } catch (error) {
+    renderImageImports();
+    setStatus(`Could not prepare the previewable link: ${error.message}`, 'error');
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function uploadImage(file, label) {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  formData.append('label', label);
+  const response = await fetch('/api/images', { method: 'POST', body: formData });
+  const result = await readJsonResponse(response);
+  if (!response.ok) throw new Error(result.error || `Image upload failed with status ${response.status}.`);
+  if (typeof result.url !== 'string' || !result.url) throw new Error('The image service did not return a usable URL.');
+  return result;
+}
+
+function previewPublishedLecture() {
+  if (!state.publication?.url) return setStatus('Select Continue first so the previewable link can be created.', 'error');
+  const previewWindow = window.open(state.publication.url, '_blank', 'noopener,noreferrer');
+  if (!previewWindow) setStatus('The preview window was blocked. Allow pop-ups and try again.', 'error');
 }
 
 async function publishCurrentLecture() {
@@ -204,22 +373,10 @@ async function loadTemplate(designId) {
   return template;
 }
 
-async function loadExample(designId) {
-  if (state.examples.has(designId)) return state.examples.get(designId);
-  const design = DESIGNS[designId];
-  if (!design) throw new Error('Unsupported lecture design.');
-  const example = LectureRenderer.normalize(await fetchJson(design.exampleUrl || DEFAULT_EXAMPLE_URL));
-  state.examples.set(designId, example);
-  return example;
+function selectedDesignId() {
+  return elements.designInputs.find((input) => input.checked)?.value || 'classic';
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, { cache: 'no-store' });
-  if (!response.ok) throw new Error('Could not load the example JSON.');
-  return response.json();
-}
-
-function selectedDesignId() { return elements.designInputs.find((input) => input.checked)?.value || 'classic'; }
 function updateDocumentDetails(data) {
   const documentData = data.document;
   elements.detailTitle.textContent = documentData.title;
@@ -228,27 +385,66 @@ function updateDocumentDetails(data) {
   elements.detailBlocks.textContent = String(documentData.sections.reduce((total, section) => total + LectureRenderer.countBlocks(section.blocks), 0));
   elements.documentDetails.hidden = false;
 }
+
+function resetBuiltLecture() {
+  revokeImagePreviews();
+  state.sourceData = null;
+  state.documentData = null;
+  state.imageSlots = [];
+  elements.documentDetails.hidden = true;
+  elements.imageImportPanel.hidden = true;
+  elements.imageImportList.replaceChildren();
+  elements.continueButton.hidden = true;
+  elements.continueButton.disabled = true;
+  clearPublication();
+}
+
+function revokeImagePreviews() {
+  state.imageSlots.forEach((slot) => {
+    if (slot.previewUrl) URL.revokeObjectURL(slot.previewUrl);
+  });
+}
+
 function clearPublication() {
   state.publication = null;
+  elements.previewButton.hidden = true;
+  elements.previewButton.disabled = true;
   elements.copyButton.hidden = true;
   elements.copyButton.disabled = true;
   elements.publishedLink.hidden = true;
   elements.publishedLink.removeAttribute('href');
   elements.publishedLink.textContent = '';
 }
-function setStatus(message, type) { elements.status.textContent = message; elements.status.className = `status status-${type}`; }
-function showPreviewError(previewWindow, message) {
-  previewWindow.document.open();
-  previewWindow.document.write('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Publishing failed</title><main style="font-family:system-ui;max-width:680px;margin:12vh auto;padding:24px"><h1>Publishing failed</h1><p id="publishing-error"></p><p><a href="/">Return to Lecture Publisher</a></p></main>');
-  previewWindow.document.close();
-  const errorElement = previewWindow.document.querySelector('#publishing-error');
-  if (errorElement) errorElement.textContent = message;
+
+function setBusy(busy, buttonText = '') {
+  state.busy = busy;
+  elements.buildButton.disabled = busy;
+  elements.fileInput.disabled = busy;
+  elements.designInputs.forEach((input) => { input.disabled = busy; });
+  if (busy) {
+    elements.continueButton.disabled = true;
+    if (buttonText) elements.continueButton.textContent = buttonText;
+  } else {
+    elements.continueButton.textContent = 'Continue';
+    updateContinueAvailability();
+  }
 }
+
+function setStatus(message, type) {
+  elements.status.textContent = message;
+  elements.status.className = `status status-${type}`;
+}
+
 async function readJsonResponse(response) {
   const text = await response.text();
   if (!text) return {};
-  try { return JSON.parse(text); } catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` };
+  }
 }
+
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;

@@ -1,0 +1,22 @@
+.image-import-panel{margin-top:24px;padding-top:24px;border-top:1px solid var(--line)}
+.image-import-help{margin:-6px 0 10px;color:var(--muted);line-height:1.6}
+.image-import-summary{margin:0 0 14px;color:var(--primary-strong);font-size:.9rem;font-weight:800}
+.image-import-list{display:grid;gap:12px}
+.image-import-item{display:grid;grid-template-columns:minmax(0,1fr) 116px minmax(180px,.7fr);gap:16px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:rgba(125,162,255,.035)}
+.image-import-item[data-ready="true"]{border-color:rgba(103,215,161,.42);background:rgba(103,215,161,.055)}
+.image-import-copy{display:grid;gap:5px;min-width:0}
+.image-import-index{color:var(--primary-strong);font-size:.7rem;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+.image-import-label{font-size:1rem;overflow-wrap:anywhere}
+.image-import-copy small{color:var(--muted);line-height:1.45}
+.image-import-preview{display:grid;width:116px;aspect-ratio:4/3;overflow:hidden;border:1px dashed #50699f;border-radius:10px;place-items:center;color:var(--muted);background:#0d152a;font-size:.75rem;text-align:center}
+.image-import-preview img{width:100%;height:100%;object-fit:cover}
+.image-import-controls{display:grid;gap:8px;justify-items:start;min-width:0}
+.image-file-button{display:inline-flex;min-height:40px;padding:8px 13px;border:1px solid var(--line);border-radius:9px;align-items:center;color:var(--text);background:var(--surface-strong);font-size:.86rem;font-weight:800;cursor:pointer}
+.image-file-button:hover{border-color:var(--primary)}
+.image-import-controls input[type="file"]{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%)}
+.image-import-controls input[type="file"]:focus+.image-file-name,.image-file-button:focus-within{outline:3px solid rgba(125,162,255,.34);outline-offset:3px}
+.image-file-name{max-width:100%;color:var(--muted);font-size:.78rem;line-height:1.45;overflow-wrap:anywhere}
+.image-import-empty{margin:0;padding:16px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);background:rgba(125,162,255,.04)}
+.publish-heading{margin-top:26px;padding-top:22px;border-top:1px solid var(--line)}
+.build-row{margin-bottom:0}
+@media(max-width:760px){.image-import-item{grid-template-columns:1fr}.image-import-preview{width:min(100%,240px)}.image-import-controls{justify-items:stretch}.image-file-button{justify-content:center}}
