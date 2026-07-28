@@ -82,7 +82,7 @@
     setLoading(true);
     try {
       setStatus('Loading the PDF engine in your browser…', 'neutral');
-      const { extractPdfArtifact } = await import('/pdf-extractor-runtime.js');
+      const { extractPdfArtifact } = await import('/pdf-extractor-runtime.js?v=raw-stream-1');
 
       setStatus('Reading the PDF and extracting its embedded images…', 'neutral');
       const artifact = await extractPdfArtifact(file, elements.selectors.value);
@@ -91,13 +91,19 @@
       }
 
       setStatus(`Uploading ${artifact.imageCount} extracted image${artifact.imageCount === 1 ? '' : 's'} for download…`, 'neutral');
-      const form = new FormData();
-      form.append('artifact', artifact.blob, artifact.filename);
-      form.append('sourceFilename', file.name);
-      form.append('imageCount', String(artifact.imageCount));
-      if (artifact.requestedJson) form.append('requestedJson', artifact.requestedJson);
+      const headers = new Headers({
+        'Content-Type': artifact.contentType,
+        'X-PDF-Artifact-Filename': encodeHeader(artifact.filename),
+        'X-PDF-Source-Filename': encodeHeader(file.name),
+        'X-PDF-Image-Count': String(artifact.imageCount)
+      });
+      if (artifact.requestedJson) headers.set('X-PDF-Requested-Json', encodeHeader(artifact.requestedJson));
 
-      const response = await fetch('/api/pdf-extractions', { method: 'POST', body: form });
+      const response = await fetch('/api/pdf-extractions', {
+        method: 'POST',
+        headers,
+        body: artifact.blob
+      });
       const result = await readJsonResponse(response);
       if (!response.ok) throw new Error(result.error || `Extraction failed with status ${response.status}.`);
       if (!result.downloadUrl) throw new Error('The extraction finished without a download URL.');
@@ -142,11 +148,16 @@
     try {
       return JSON.parse(text);
     } catch {
-      const cloudflareError = response.headers.get('cf-error-type');
-      if (cloudflareError) return { error: `Cloudflare runtime error ${cloudflareError}.` };
       const title = text.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
-      return { error: title || `The server returned an unexpected response (status ${response.status}).` };
+      return { error: title || `Cloudflare returned an unexpected response (status ${response.status}).` };
     }
+  }
+
+  function encodeHeader(value) {
+    const bytes = new TextEncoder().encode(String(value || ''));
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
 
   function formatBytes(bytes) {
