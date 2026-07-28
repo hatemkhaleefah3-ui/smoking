@@ -2,6 +2,7 @@
 
 (() => {
   const MAX_PDF_BYTES = 25 * 1024 * 1024;
+  const MAX_RESULT_BYTES = 64 * 1024 * 1024;
   const elements = {
     fileInput: document.querySelector('#pdf-file-input'),
     dropZone: document.querySelector('#pdf-drop-zone'),
@@ -78,35 +79,34 @@
     if (file.size === 0) return setStatus('The selected PDF is empty.', 'error');
     if (file.size > MAX_PDF_BYTES) return setStatus('This PDF is larger than the current 25 MB extraction limit.', 'error');
 
-    let requestedJson = '';
-    const rawSelectors = elements.selectors.value.trim();
-    if (rawSelectors) {
-      try {
-        const parsed = JSON.parse(rawSelectors);
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('The value must be a JSON object.');
-        requestedJson = JSON.stringify(parsed);
-      } catch (error) {
-        return setStatus(`Invalid image selection JSON: ${error.message}`, 'error');
-      }
-    }
-
-    const form = new FormData();
-    form.append('pdf', file, file.name);
-    if (requestedJson) form.append('images', requestedJson);
-
     setLoading(true);
-    setStatus('Reading the PDF and extracting its embedded images…', 'neutral');
     try {
+      setStatus('Loading the PDF engine in your browser…', 'neutral');
+      const { extractPdfArtifact } = await import('/pdf-extractor-runtime.js');
+
+      setStatus('Reading the PDF and extracting its embedded images…', 'neutral');
+      const artifact = await extractPdfArtifact(file, elements.selectors.value);
+      if (artifact.blob.size > MAX_RESULT_BYTES) {
+        throw new Error('The extracted result is larger than the current 64 MB result limit.');
+      }
+
+      setStatus(`Uploading ${artifact.imageCount} extracted image${artifact.imageCount === 1 ? '' : 's'} for download…`, 'neutral');
+      const form = new FormData();
+      form.append('artifact', artifact.blob, artifact.filename);
+      form.append('sourceFilename', file.name);
+      form.append('imageCount', String(artifact.imageCount));
+      if (artifact.requestedJson) form.append('requestedJson', artifact.requestedJson);
+
       const response = await fetch('/api/pdf-extractions', { method: 'POST', body: form });
       const result = await readJsonResponse(response);
       if (!response.ok) throw new Error(result.error || `Extraction failed with status ${response.status}.`);
       if (!result.downloadUrl) throw new Error('The extraction finished without a download URL.');
 
       state.downloadUrl = result.downloadUrl;
-      state.downloadFilename = result.filename || '';
+      state.downloadFilename = result.filename || artifact.filename;
       elements.actionButton.querySelector('.button-label').textContent = 'Download';
       elements.actionButton.disabled = false;
-      setStatus(`${result.imageCount} image${result.imageCount === 1 ? '' : 's'} extracted. Select Download to save ${result.filename || 'the result'}.`, 'success');
+      setStatus(`${result.imageCount} image${result.imageCount === 1 ? '' : 's'} extracted. Select Download to save ${state.downloadFilename}.`, 'success');
     } catch (error) {
       resetDownload();
       setStatus(error.message || 'Image extraction failed.', 'error');
@@ -139,8 +139,14 @@
   async function readJsonResponse(response) {
     const text = await response.text();
     if (!text) return {};
-    try { return JSON.parse(text); }
-    catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
+    try {
+      return JSON.parse(text);
+    } catch {
+      const cloudflareError = response.headers.get('cf-error-type');
+      if (cloudflareError) return { error: `Cloudflare runtime error ${cloudflareError}.` };
+      const title = text.match(/<title>([^<]+)<\/title>/i)?.[1]?.trim();
+      return { error: title || `The server returned an unexpected response (status ${response.status}).` };
+    }
   }
 
   function formatBytes(bytes) {
