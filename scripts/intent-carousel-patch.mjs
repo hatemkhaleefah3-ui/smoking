@@ -5,6 +5,14 @@ export async function patchIntentCarousel(distDirectory) {
   const path = resolve(distDirectory, 'image-candidate-carousel.js');
   let source = await readFile(path, 'utf8');
 
+  source = replaceRequired(source, `    renderQueued: false,
+    startSearchQueued: false,
+    suppressNativeCapture: false`, `    renderQueued: false,
+    startSearchQueued: false,
+    activeSearches: 0,
+    searchQueue: [],
+    suppressNativeCapture: false`, 'search queue state');
+
   source = replaceRequired(source, `      state.slots = window.ImageImportWorkflow.collectImageSlots(source);
       state.definitions = source.imoo.images.map((item) => ({
         id: typeof item?.id === 'string' ? item.id.trim() : '',
@@ -21,6 +29,11 @@ export async function patchIntentCarousel(distDirectory) {
         };
       }).filter((item) => item.id);`, 'definition payload');
 
+  source = replaceRequired(source, `    state.cards.clear();
+    state.startSearchQueued = false;`, `    state.cards.clear();
+    state.startSearchQueued = false;
+    state.searchQueue = [];`, 'queue reset');
+
   source = replaceRequired(source,
     "    status.textContent = cardState.searching ? 'Searching Wikimedia…' : cardState.error || `${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;",
     [
@@ -30,6 +43,35 @@ export async function patchIntentCarousel(distDirectory) {
       "    status.textContent = cardState.searching ? 'Gemini is understanding and searching…' : cardState.error || `${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;"
     ].join('\n'),
     'carousel status');
+
+  source = replaceRequired(source,
+    `      if (startSearch && !cardState.searched && !cardState.searching) searchDefinition(definition);`,
+    `      if (startSearch && !cardState.searched && !cardState.searching) enqueueSearch(definition);`,
+    'queued search start');
+
+  source = replaceRequired(source, `  async function searchDefinition(definition) {`, `  function enqueueSearch(definition) {
+    const cardState = ensureCardState(definition.id);
+    if (cardState.searched || cardState.searching || state.searchQueue.some((item) => item.id === definition.id)) return;
+    cardState.error = 'Waiting for Gemini search…';
+    state.searchQueue.push(definition);
+    queueRender(false);
+    drainSearchQueue();
+  }
+
+  function drainSearchQueue() {
+    while (state.activeSearches < 2 && state.searchQueue.length) {
+      const definition = state.searchQueue.shift();
+      const cardState = ensureCardState(definition.id);
+      if (cardState.searched || cardState.searching) continue;
+      state.activeSearches += 1;
+      searchDefinition(definition).finally(() => {
+        state.activeSearches = Math.max(0, state.activeSearches - 1);
+        drainSearchQueue();
+      });
+    }
+  }
+
+  async function searchDefinition(definition) {`, 'search queue functions');
 
   source = replaceRequired(source, `      for (const altText of definition.altTexts) {
         const response = await fetch('/api/search', {
