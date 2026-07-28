@@ -15,7 +15,13 @@ try {
     requestedUrls.push(String(url));
     if (String(url).includes('generativelanguage.googleapis.com')) {
       assert.equal(options.headers['x-goog-api-key'], 'test-key');
-      return Response.json({ candidates: [{ content: { parts: [{ text: 'human heart anatomy' }] } }] });
+      const body = JSON.parse(options.body);
+      assert.equal(body.generationConfig.responseMimeType, 'application/json');
+      assert.equal(body.generationConfig.responseSchema.properties.searchTerm.type, 'STRING');
+      assert.match(body.contents[0].parts[0].text, /Heart -> human heart anatomy diagram medical illustration/);
+      return Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ searchTerm: 'human heart anatomy diagram medical illustration' }) }] } }]
+      });
     }
     assertCommonsRequest(url, options);
     return commonsResponse('heart-one.jpg', 'heart-two.jpg');
@@ -27,15 +33,15 @@ try {
   assert.equal(successResponse.status, 200);
   assert.deepEqual(await successResponse.json(), {
     images: [
-      'https://upload.wikimedia.org/heart-one.jpg',
-      'https://upload.wikimedia.org/heart-two.jpg'
+      'https://upload.wikimedia.org/thumb/heart-one.jpg/900px-heart-one.jpg',
+      'https://upload.wikimedia.org/thumb/heart-two.jpg/900px-heart-two.jpg'
     ]
   });
-  assert.match(requestedUrls[1], /gsrsearch=human\+heart\+anatomy/);
-  assert.match(requestedUrls[1], /gsrlimit=5/);
+  assert.match(requestedUrls[1], /gsrsearch=human\+heart\+anatomy\+diagram\+medical\+illustration/);
+  assert.match(requestedUrls[1], /gsrlimit=10/);
 
-  // A missing key must not break image search. The endpoint should call
-  // Wikimedia directly with the visitor's original query.
+  // A missing key must still expand an ambiguous anatomy term instead of sending
+  // the raw word "Heart" to Commons, where it can match songs and sheet music.
   const missingKeyUrls = [];
   globalThis.fetch = async (url, options = {}) => {
     missingKeyUrls.push(String(url));
@@ -46,26 +52,83 @@ try {
   const missingKeyResponse = await worker.fetch(request({ query: 'Heart' }), {}, {});
   assert.equal(missingKeyResponse.status, 200);
   assert.deepEqual(await missingKeyResponse.json(), {
-    images: ['https://upload.wikimedia.org/heart-fallback.jpg']
+    images: ['https://upload.wikimedia.org/thumb/heart-fallback.jpg/900px-heart-fallback.jpg']
   });
-  assert.match(missingKeyUrls[0], /gsrsearch=Heart/);
+  assert.match(missingKeyUrls[0], /gsrsearch=human\+heart\+anatomy\+diagram\+medical\+illustration/);
+  assert.doesNotMatch(missingKeyUrls[0], /gsrsearch=Heart(?:&|$)/);
 
-  // Invalid, restricted, or unavailable Gemini access should also fall back to
-  // Wikimedia rather than returning a generic frontend failure.
+  // Explicit non-medical intent must not be rewritten as anatomy.
+  let symbolUrl = '';
+  globalThis.fetch = async (url, options = {}) => {
+    symbolUrl = String(url);
+    assertCommonsRequest(url, options);
+    return commonsResponse('heart-symbol.svg');
+  };
+  const symbolResponse = await worker.fetch(request({ query: 'heart symbol' }), {}, {});
+  assert.equal(symbolResponse.status, 200);
+  assert.match(symbolUrl, /gsrsearch=heart\+symbol/);
+  assert.doesNotMatch(symbolUrl, /anatomy/);
+
+  // Even if Gemini returns an overly broad medical term, the server must enforce
+  // anatomy and visual context before calling Commons.
+  let broadGeminiCommonsUrl = '';
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      return Response.json({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ searchTerm: 'heart' }) }] } }]
+      });
+    }
+    broadGeminiCommonsUrl = String(url);
+    assertCommonsRequest(url, options);
+    return commonsResponse('heart-enforced.jpg');
+  };
+  const broadGeminiResponse = await worker.fetch(request({ query: 'Heart' }), { GEMINI_API_KEY: 'test-key' }, {});
+  assert.equal(broadGeminiResponse.status, 200);
+  assert.match(broadGeminiCommonsUrl, /gsrsearch=human\+heart\+anatomy\+diagram\+medical\+illustration/);
+
+  // Invalid, restricted, or unavailable Gemini access should use the same
+  // deterministic anatomy refinement instead of the ambiguous raw query.
   let fallbackCalls = 0;
+  let fallbackCommonsUrl = '';
   globalThis.fetch = async (url, options = {}) => {
     fallbackCalls += 1;
     if (String(url).includes('generativelanguage.googleapis.com')) {
       return new Response('forbidden', { status: 403 });
     }
+    fallbackCommonsUrl = String(url);
     assertCommonsRequest(url, options);
     return commonsResponse('lungs-fallback.jpg');
   };
   const geminiFailureResponse = await worker.fetch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'invalid-key' }, {});
   assert.equal(geminiFailureResponse.status, 200);
   assert.equal(fallbackCalls, 2);
+  assert.match(fallbackCommonsUrl, /gsrsearch=human\+lungs\+anatomy\+diagram\+medical\+illustration/);
   assert.deepEqual(await geminiFailureResponse.json(), {
-    images: ['https://upload.wikimedia.org/lungs-fallback.jpg']
+    images: ['https://upload.wikimedia.org/thumb/lungs-fallback.jpg/900px-lungs-fallback.jpg']
+  });
+
+  // Non-image Commons files are ignored, and display thumbnails are preferred to
+  // original source URLs for reliable, bandwidth-conscious rendering.
+  globalThis.fetch = async (url, options = {}) => {
+    assertCommonsRequest(url, options);
+    return Response.json({
+      query: {
+        pages: {
+          1: { imageinfo: [{ mime: 'audio/ogg', url: 'https://upload.wikimedia.org/audio.ogg' }] },
+          2: {
+            imageinfo: [{
+              mime: 'image/svg+xml',
+              url: 'https://upload.wikimedia.org/diagram.svg',
+              thumburl: 'https://upload.wikimedia.org/thumb/diagram.svg/900px-diagram.svg.png'
+            }]
+          }
+        }
+      }
+    });
+  };
+  const filteringResponse = await worker.fetch(request({ query: 'heart' }), {}, {});
+  assert.deepEqual(await filteringResponse.json(), {
+    images: ['https://upload.wikimedia.org/thumb/diagram.svg/900px-diagram.svg.png']
   });
 
   // Wikimedia can report an API-level error with HTTP 200. Treat that as an
@@ -83,7 +146,7 @@ try {
   assert.equal(wikimediaFailureResponse.status, 502);
   assert.deepEqual(await wikimediaFailureResponse.json(), { error: 'Something went wrong' });
 
-  console.log('Media search routing, fallback and Wikimedia identification validation passed.');
+  console.log('Media search relevance, fallback and Wikimedia validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -97,9 +160,13 @@ function request(body) {
 }
 
 function assertCommonsRequest(url, options) {
-  assert.match(String(url), /^https:\/\/commons\.wikimedia\.org\/w\/api\.php\?/);
-  assert.doesNotMatch(String(url), /(?:^|[?&])origin=/);
-  assert.match(options.headers['User-Agent'], /^LecturePublisherMediaSearch\/1\.1 \(https:\/\/github\.com\/hatemkhaleefah3-ui\/smoking\)$/);
+  const value = String(url);
+  assert.match(value, /^https:\/\/commons\.wikimedia\.org\/w\/api\.php\?/);
+  assert.doesNotMatch(value, /(?:^|[?&])origin=/);
+  assert.match(value, /gsrnamespace=6/);
+  assert.match(value, /iiprop=url%7Cmime/);
+  assert.match(value, /iiurlwidth=900/);
+  assert.match(options.headers['User-Agent'], /^LecturePublisherMediaSearch\/1\.2 \(https:\/\/github\.com\/hatemkhaleefah3-ui\/smoking\)$/);
   assert.equal(options.headers['Api-User-Agent'], options.headers['User-Agent']);
 }
 
@@ -108,7 +175,13 @@ function commonsResponse(...filenames) {
     query: {
       pages: Object.fromEntries(filenames.map((filename, index) => [
         index + 1,
-        { imageinfo: [{ url: `https://upload.wikimedia.org/${filename}` }] }
+        {
+          imageinfo: [{
+            mime: filename.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg',
+            url: `https://upload.wikimedia.org/${filename}`,
+            thumburl: `https://upload.wikimedia.org/thumb/${filename}/900px-${filename}`
+          }]
+        }
       ]))
     }
   });
