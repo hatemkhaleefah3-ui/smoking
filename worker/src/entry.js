@@ -1,6 +1,5 @@
 import lectureWorker from './index.js';
 import { createPdfExtraction, downloadPdfExtraction } from './pdf-extractor.js';
-import { configureMupdfAssets } from './mupdf-loader.js';
 import { ensurePdfExtractionSchema } from './pdf-schema.js';
 
 export default {
@@ -11,7 +10,6 @@ export default {
       if (url.pathname === '/api/pdf-extractions' && request.method === 'POST') {
         assertSameOrigin(request, url);
         const extractionEnv = pdfExtractionEnv(env);
-        configureMupdfAssets(env.ASSETS);
         await ensurePdfExtractionSchema(extractionEnv, HttpError);
         return createPdfExtraction(request, extractionEnv, url, { HttpError, json });
       }
@@ -41,6 +39,9 @@ function pdfExtractionEnv(env) {
   const bucket = env.PDF_EXTRACTIONS || env.LECTURES;
   if (!bucket) {
     throw new HttpError(500, 'An R2 storage binding is not configured for this environment.');
+  }
+  if (!env.DB) {
+    throw new HttpError(500, 'The D1 database binding “DB” is not configured for this environment.');
   }
   return Object.assign(Object.create(env), { PDF_EXTRACTIONS: bucket });
 }
