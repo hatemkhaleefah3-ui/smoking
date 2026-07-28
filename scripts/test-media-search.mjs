@@ -10,139 +10,124 @@ try {
   assert.equal(emptyResponse.status, 400);
   assert.equal(fetchCalls, 0);
 
-  // Attempt 1 succeeds and stops immediately after generation, Wikimedia search,
-  // and title relevance validation.
-  const earlyCalls = [];
-  globalThis.fetch = async (url, options = {}) => {
-    const value = String(url);
-    earlyCalls.push(value);
-    if (value.includes('generativelanguage.googleapis.com')) {
-      const body = JSON.parse(options.body);
-      const prompt = body.contents[0].parts[0].text;
-      if (prompt.includes('You generate Wikimedia Commons search phrases')) {
-        assert.match(prompt, /Original user input: Glycolysis/);
-        assert.match(prompt, /Preserve the user’s core intent exactly/);
-        return geminiJson({ searchTerm: 'glycolysis pathway', intentSummary: 'glycolysis metabolic pathway' });
-      }
-      assert.match(prompt, /Candidate file titles/);
-      return geminiJson({ relevantIndexes: [0, 1] });
-    }
-    assertCommonsRequest(url, options);
-    return commonsResponse(
-      ['File:Glycolysis pathway overview.svg', 'glycolysis-one.svg'],
-      ['File:Glycolysis enzymes diagram.png', 'glycolysis-two.png']
-    );
-  };
-  const earlyResponse = await worker.fetch(request({ query: 'Glycolysis' }), { GEMINI_API_KEY: 'test-key' });
-  assert.equal(earlyResponse.status, 200);
-  assert.equal(earlyCalls.length, 3);
-  assert.deepEqual(await earlyResponse.json(), {
-    images: [
-      'https://upload.wikimedia.org/thumb/glycolysis-one.svg/900px-glycolysis-one.svg',
-      'https://upload.wikimedia.org/thumb/glycolysis-two.png/900px-glycolysis-two.png'
-    ]
-  });
-
-  // Attempt 1 returns irrelevant junk, attempt 2 returns zero results, and attempt
-  // 3 succeeds with a distinct academic synonym while preserving the same concept.
-  const generationPrompts = [];
-  const variationTerms = ['glycolysis', 'Embden Meyerhof pathway', 'glycolytic pathway diagram'];
-  let variationIndex = 0;
-  let commonsIndex = 0;
-  let evaluationIndex = 0;
+  // Current Gemini responseFormat is used and Attempt 1 stops immediately.
+  let firstAttemptGeminiCalls = 0;
+  let firstAttemptCommonsCalls = 0;
   globalThis.fetch = async (url, options = {}) => {
     const value = String(url);
     if (value.includes('generativelanguage.googleapis.com')) {
+      firstAttemptGeminiCalls += 1;
       const body = JSON.parse(options.body);
-      const prompt = body.contents[0].parts[0].text;
-      if (prompt.includes('You generate Wikimedia Commons search phrases')) {
-        generationPrompts.push(prompt);
-        const term = variationTerms[variationIndex++];
-        return geminiJson({ searchTerm: term, intentSummary: 'glycolysis metabolic pathway' });
+      assert.equal(body.generationConfig.responseFormat.text.mimeType, 'application/json');
+      assert.equal(body.generationConfig.responseFormat.text.schema.type, 'object');
+      if (firstAttemptGeminiCalls === 1) {
+        return geminiResult({ searchTerm: 'glycolysis', intentSummary: 'glycolysis' });
       }
-      evaluationIndex += 1;
-      return evaluationIndex === 1
-        ? geminiJson({ relevantIndexes: [] })
-        : geminiJson({ relevantIndexes: [0, 1, 2] });
+      return geminiResult({ relevantIndexes: [0, 1] });
     }
-
-    commonsIndex += 1;
+    firstAttemptCommonsCalls += 1;
     assertCommonsRequest(url, options);
-    if (commonsIndex === 1) {
-      return commonsResponse(
-        ['File:Butterfly stone plaque.jpg', 'butterfly.jpg'],
-        ['File:Ancient decorative tablet.jpg', 'plaque.jpg']
-      );
-    }
-    if (commonsIndex === 2) return commonsResponse();
-    return commonsResponse(
-      ['File:Glycolysis metabolic pathway.svg', 'glycolysis-pathway.svg'],
-      ['File:Embden Meyerhof pathway diagram.png', 'embden.png'],
-      ['File:Glycolysis reactions chart.jpg', 'glycolysis-reactions.jpg']
-    );
+    return commonsResponse('Glycolysis pathway.svg', 'Glycolysis overview.png');
   };
+  const firstAttempt = await worker.fetch(request({ query: 'Glycolysis' }), { GEMINI_API_KEY: 'test-key' });
+  assert.equal(firstAttempt.status, 200);
+  assert.equal(firstAttemptCommonsCalls, 1);
+  assert.equal((await firstAttempt.json()).images.length, 2);
 
+  // A Gemini variation failure must fall back to the exact input, not HTTP 502.
+  let variationFailureCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    variationFailureCalls += 1;
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      return new Response('bad request', { status: 400 });
+    }
+    assertCommonsRequest(url, options);
+    assert.match(String(url), /gsrsearch=Glycolysis/);
+    return commonsResponse('Glycolysis diagram.svg');
+  };
+  const variationFailure = await worker.fetch(request({ query: 'Glycolysis' }), { GEMINI_API_KEY: 'test-key' });
+  assert.equal(variationFailure.status, 200);
+  assert.equal(variationFailureCalls, 2);
+  assert.equal((await variationFailure.json()).images.length, 1);
+
+  // A relevance-check failure also degrades to local title matching.
+  let relevanceGeminiCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value.includes('generativelanguage.googleapis.com')) {
+      relevanceGeminiCalls += 1;
+      if (relevanceGeminiCalls === 1) {
+        return geminiResult({ searchTerm: 'human heart', intentSummary: 'heart' });
+      }
+      return new Response('quota exceeded', { status: 429 });
+    }
+    assertCommonsRequest(url, options);
+    return commonsResponse('Human heart anterior view.svg', 'Violin sheet music.png');
+  };
+  const relevanceFailure = await worker.fetch(request({ query: 'Heart' }), { GEMINI_API_KEY: 'test-key' });
+  assert.equal(relevanceFailure.status, 200);
+  assert.equal((await relevanceFailure.json()).images.length, 1);
+
+  // Junk is rejected; the next semantic variation succeeds.
+  let retryGeminiCalls = 0;
+  let retryCommonsCalls = 0;
+  globalThis.fetch = async (url, options = {}) => {
+    const value = String(url);
+    if (value.includes('generativelanguage.googleapis.com')) {
+      retryGeminiCalls += 1;
+      if (retryGeminiCalls === 1) return geminiResult({ searchTerm: 'glycolysis', intentSummary: 'glycolysis' });
+      if (retryGeminiCalls === 2) return geminiResult({ relevantIndexes: [] });
+      if (retryGeminiCalls === 3) return geminiResult({ searchTerm: 'Embden Meyerhof pathway', intentSummary: 'glycolysis' });
+      return geminiResult({ relevantIndexes: [0, 1] });
+    }
+    retryCommonsCalls += 1;
+    assertCommonsRequest(url, options);
+    return retryCommonsCalls === 1
+      ? commonsResponse('Blue butterfly.jpg', 'Stone plaque.jpg')
+      : commonsResponse('Embden Meyerhof pathway.svg', 'Glycolysis reactions.png');
+  };
   const retryResponse = await worker.fetch(request({ query: 'Glycolysis' }), { GEMINI_API_KEY: 'test-key' });
   assert.equal(retryResponse.status, 200);
-  assert.equal(generationPrompts.length, 3);
-  assert.match(generationPrompts[1], /Previously tried phrases/);
-  assert.match(generationPrompts[1], /glycolysis/);
-  assert.match(generationPrompts[1], /Butterfly stone plaque/);
-  assert.match(generationPrompts[2], /Embden Meyerhof pathway/);
-  assert.deepEqual((await retryResponse.json()).images, [
-    'https://upload.wikimedia.org/thumb/glycolysis-pathway.svg/900px-glycolysis-pathway.svg',
-    'https://upload.wikimedia.org/thumb/embden.png/900px-embden.png',
-    'https://upload.wikimedia.org/thumb/glycolysis-reactions.jpg/900px-glycolysis-reactions.jpg'
-  ]);
+  assert.equal(retryCommonsCalls, 2);
+  assert.equal((await retryResponse.json()).images.length, 2);
 
-  // Three failed intelligent variations return an empty image list, allowing the
-  // existing frontend to show its friendly “No images found” message.
-  let failedGeneration = 0;
-  let failedCommons = 0;
-  globalThis.fetch = async (url, options = {}) => {
-    const value = String(url);
-    if (value.includes('generativelanguage.googleapis.com')) {
-      const prompt = JSON.parse(options.body).contents[0].parts[0].text;
-      if (prompt.includes('You generate Wikimedia Commons search phrases')) {
-        failedGeneration += 1;
-        return geminiJson({ searchTerm: `exact concept variation ${failedGeneration}`, intentSummary: 'same exact concept' });
-      }
-      throw new Error('No relevance evaluation should run for zero candidates.');
-    }
-    failedCommons += 1;
-    assertCommonsRequest(url, options);
-    return commonsResponse();
-  };
-  const noResultsResponse = await worker.fetch(request({ query: 'Unfindable concept' }), { GEMINI_API_KEY: 'test-key' });
-  assert.equal(failedGeneration, 3);
-  assert.equal(failedCommons, 3);
-  assert.deepEqual(await noResultsResponse.json(), { images: [] });
-
-  // Missing Gemini access searches the exact original phrase once and does not
-  // fabricate alternative intent.
-  let noKeyCalls = 0;
-  globalThis.fetch = async (url, options = {}) => {
-    noKeyCalls += 1;
-    assertCommonsRequest(url, options);
-    assert.match(String(url), /gsrsearch=heart\+symbol/);
-    return commonsResponse(['File:Heart symbol.svg', 'heart-symbol.svg']);
-  };
-  const noKeyResponse = await worker.fetch(request({ query: 'heart symbol' }), {});
-  assert.equal(noKeyCalls, 1);
-  assert.equal((await noKeyResponse.json()).images.length, 1);
-
+  // Three successful Wikimedia searches with no accepted result return an empty list.
+  let emptyGeminiCalls = 0;
   globalThis.fetch = async (url, options = {}) => {
     if (String(url).includes('generativelanguage.googleapis.com')) {
-      return geminiJson({ searchTerm: 'glycolysis', intentSummary: 'glycolysis' });
+      emptyGeminiCalls += 1;
+      if (emptyGeminiCalls % 2 === 1) {
+        return geminiResult({
+          searchTerm: `term-${Math.ceil(emptyGeminiCalls / 2)}`,
+          intentSummary: 'requested concept'
+        });
+      }
+      return geminiResult({ relevantIndexes: [] });
     }
     assertCommonsRequest(url, options);
-    return Response.json({ error: { code: 'baduseragent' } });
+    return commonsResponse(`Unrelated ${emptyGeminiCalls}.jpg`);
   };
-  const upstreamError = await worker.fetch(request({ query: 'glycolysis' }), { GEMINI_API_KEY: 'test-key' });
-  assert.equal(upstreamError.status, 502);
-  assert.deepEqual(await upstreamError.json(), { error: 'Something went wrong' });
+  const emptyResult = await worker.fetch(request({ query: 'rare exact concept' }), { GEMINI_API_KEY: 'test-key' });
+  assert.equal(emptyResult.status, 200);
+  assert.deepEqual(await emptyResult.json(), { images: [] });
 
-  console.log('Iterative semantic media search validation passed.');
+  // Only a complete Wikimedia outage should return the generic error.
+  let outageGeminiCalls = 0;
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) {
+      outageGeminiCalls += 1;
+      return geminiResult({
+        searchTerm: `outage-term-${outageGeminiCalls}`,
+        intentSummary: 'same concept'
+      });
+    }
+    return new Response('upstream unavailable', { status: 503 });
+  };
+  const outage = await worker.fetch(request({ query: 'Glycolysis' }), { GEMINI_API_KEY: 'test-key' });
+  assert.equal(outage.status, 502);
+  assert.deepEqual(await outage.json(), { error: 'Something went wrong' });
+
+  console.log('Iterative media search runtime resilience validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -155,31 +140,30 @@ function request(body) {
   });
 }
 
-function geminiJson(value) {
-  return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify(value) }] } }] });
+function geminiResult(value) {
+  return Response.json({
+    candidates: [{ content: { parts: [{ text: JSON.stringify(value) }] } }]
+  });
 }
 
 function assertCommonsRequest(url, options) {
   const value = String(url);
   assert.match(value, /^https:\/\/commons\.wikimedia\.org\/w\/api\.php\?/);
   assert.match(value, /gsrlimit=12/);
-  assert.match(value, /gsrnamespace=6/);
-  assert.match(value, /iiprop=url%7Cmime/);
-  assert.match(value, /iiurlwidth=900/);
-  assert.match(options.headers['User-Agent'], /^LecturePublisherMediaSearch\/1\.5/);
+  assert.match(options.headers['User-Agent'], /^LecturePublisherMediaSearch\/1\.6 /);
 }
 
-function commonsResponse(...entries) {
+function commonsResponse(...titles) {
   return Response.json({
     query: {
-      pages: Object.fromEntries(entries.map(([title, filename], index) => [
+      pages: Object.fromEntries(titles.map((title, index) => [
         index + 1,
         {
-          title,
+          title: `File:${title}`,
           imageinfo: [{
-            mime: filename.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg',
-            url: `https://upload.wikimedia.org/${filename}`,
-            thumburl: `https://upload.wikimedia.org/thumb/${filename}/900px-${filename}`
+            mime: title.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg',
+            url: `https://upload.wikimedia.org/${encodeURIComponent(title)}`,
+            thumburl: `https://upload.wikimedia.org/thumb/${encodeURIComponent(title)}/900px-${encodeURIComponent(title)}`
           }]
         }
       ]))

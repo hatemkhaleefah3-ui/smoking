@@ -4,7 +4,11 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_ATTEMPTS = 3;
 const MAX_IMAGES = 5;
 const MAX_CANDIDATES = 12;
-const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.5 (https://github.com/hatemkhaleefah3-ui/smoking)';
+const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.6 (https://github.com/hatemkhaleefah3-ui/smoking)';
+const LOCAL_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'at', 'by', 'for', 'from', 'in', 'of', 'on', 'or', 'the', 'to', 'with',
+  'diagram', 'image', 'illustration', 'photo', 'photograph', 'picture', 'file', 'svg', 'png', 'jpg', 'jpeg'
+]);
 
 export async function handleMediaSearch(request, env) {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405, { Allow: 'POST' });
@@ -23,48 +27,81 @@ export async function handleMediaSearch(request, env) {
   const query = sanitizeSearchTerm(typeof input?.query === 'string' ? input.query : '');
   if (!query) return json({ error: 'Query is required.' }, 400);
 
-  try {
-    if (!env?.GEMINI_API_KEY) {
+  const previousTerms = [];
+  const rejectedTitles = [];
+  let geminiAvailable = Boolean(env?.GEMINI_API_KEY);
+  let successfulWikimediaCalls = 0;
+  let lastWikimediaError = null;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    let searchTerm;
+
+    if (geminiAvailable) {
+      try {
+        searchTerm = await generateSearchVariation(query, attempt, previousTerms, rejectedTitles, env);
+      } catch (error) {
+        logFallback(error, `Gemini variation ${attempt} failed.`);
+        geminiAvailable = false;
+        searchTerm = attempt === 1 ? query : '';
+      }
+    } else {
+      searchTerm = attempt === 1 ? query : '';
+    }
+
+    if (!searchTerm) break;
+    if (previousTerms.some((term) => normalizeTerm(term) === normalizeTerm(searchTerm))) continue;
+    previousTerms.push(searchTerm);
+
+    let candidates;
+    try {
+      candidates = await searchWikimediaCommons(searchTerm);
+      successfulWikimediaCalls += 1;
+    } catch (error) {
+      if (error?.stage !== 'wikimedia') throw error;
+      lastWikimediaError = error;
       console.warn(JSON.stringify({
-        event: 'media_search_fallback',
-        stage: 'configuration',
-        message: 'GEMINI_API_KEY is missing; searching the original user text once.'
+        event: 'media_search_retry',
+        stage: 'wikimedia',
+        attempt,
+        message: error instanceof Error ? error.message : String(error)
       }));
-      const candidates = await searchWikimediaCommons(query);
-      return json({ images: candidates.slice(0, MAX_IMAGES).map((candidate) => candidate.url) });
+      continue;
     }
 
-    const previousTerms = [];
-    const rejectedTitles = [];
+    if (candidates.length === 0) continue;
 
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
-      const searchTerm = await generateSearchVariation(query, attempt, previousTerms, rejectedTitles, env);
-      if (!searchTerm || previousTerms.some((term) => normalizeTerm(term) === normalizeTerm(searchTerm))) continue;
-      previousTerms.push(searchTerm);
-
-      const candidates = await searchWikimediaCommons(searchTerm);
-      if (candidates.length === 0) continue;
-
-      const relevantIndexes = await selectRelevantCandidates(query, searchTerm, candidates, env);
-      const relevantImages = relevantIndexes
-        .map((index) => candidates[index])
-        .filter(Boolean)
-        .slice(0, MAX_IMAGES)
-        .map((candidate) => candidate.url);
-
-      if (relevantImages.length > 0) return json({ images: relevantImages });
-      rejectedTitles.push(...candidates.map((candidate) => candidate.title).filter(Boolean));
+    let relevantIndexes;
+    if (geminiAvailable) {
+      try {
+        relevantIndexes = await selectRelevantCandidates(query, searchTerm, candidates, env);
+      } catch (error) {
+        logFallback(error, `Gemini relevance check ${attempt} failed.`);
+        geminiAvailable = false;
+        relevantIndexes = selectRelevantCandidatesLocally(query, searchTerm, candidates);
+      }
+    } else {
+      relevantIndexes = selectRelevantCandidatesLocally(query, searchTerm, candidates);
     }
 
-    return json({ images: [] });
-  } catch (error) {
+    const relevantImages = relevantIndexes
+      .map((index) => candidates[index])
+      .filter(Boolean)
+      .slice(0, MAX_IMAGES)
+      .map((candidate) => candidate.url);
+
+    if (relevantImages.length > 0) return json({ images: relevantImages });
+    rejectedTitles.push(...candidates.map((candidate) => candidate.title).filter(Boolean));
+  }
+
+  if (successfulWikimediaCalls === 0 && lastWikimediaError) {
     console.error(JSON.stringify({
       event: 'media_search_error',
-      stage: error?.stage || 'unknown',
-      message: error instanceof Error ? error.message : String(error)
+      stage: 'wikimedia',
+      message: lastWikimediaError instanceof Error ? lastWikimediaError.message : String(lastWikimediaError)
     }));
     return json({ error: 'Something went wrong' }, 502);
   }
+  return json({ images: [] });
 }
 
 async function generateSearchVariation(query, attempt, previousTerms, rejectedTitles, env) {
@@ -87,18 +124,19 @@ async function generateSearchVariation(query, attempt, previousTerms, rejectedTi
   ].filter(Boolean).join('\n');
 
   const result = await callGemini(prompt, {
-    type: 'OBJECT',
+    type: 'object',
     properties: {
       searchTerm: {
-        type: 'STRING',
+        type: 'string',
         description: 'One concise English Wikimedia search phrase that preserves the exact original intent.'
       },
       intentSummary: {
-        type: 'STRING',
+        type: 'string',
         description: 'A short statement of the original concept that the phrase must continue to represent.'
       }
     },
-    required: ['searchTerm', 'intentSummary']
+    required: ['searchTerm', 'intentSummary'],
+    additionalProperties: false
   }, env, 96);
 
   const term = sanitizeSearchTerm(result?.searchTerm);
@@ -125,15 +163,16 @@ async function selectRelevantCandidates(query, searchTerm, candidates, env) {
   ].join('\n');
 
   const result = await callGemini(prompt, {
-    type: 'OBJECT',
+    type: 'object',
     properties: {
       relevantIndexes: {
-        type: 'ARRAY',
-        items: { type: 'INTEGER' },
+        type: 'array',
+        items: { type: 'integer' },
         description: 'Zero-based indexes of candidates that directly satisfy the original user intent.'
       }
     },
-    required: ['relevantIndexes']
+    required: ['relevantIndexes'],
+    additionalProperties: false
   }, env, 96);
 
   if (!Array.isArray(result?.relevantIndexes)) return [];
@@ -157,8 +196,12 @@ async function callGemini(prompt, responseSchema, env, maxOutputTokens) {
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         maxOutputTokens,
-        responseMimeType: 'application/json',
-        responseSchema
+        responseFormat: {
+          text: {
+            mimeType: 'application/json',
+            schema: responseSchema
+          }
+        }
       }
     })
   });
@@ -258,6 +301,36 @@ async function searchWikimediaCommons(searchTerm) {
     }
   }
   return candidates;
+}
+
+function selectRelevantCandidatesLocally(query, searchTerm, candidates) {
+  const tokens = meaningfulTokens(`${query} ${searchTerm}`);
+  if (tokens.length === 0) return candidates.slice(0, MAX_IMAGES).map((_, index) => index);
+
+  return candidates
+    .map((candidate, index) => {
+      const title = normalizeTerm(candidate.title);
+      const score = tokens.reduce((total, token) => total + (title.includes(token) ? 1 : 0), 0);
+      return { index, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, MAX_IMAGES)
+    .map((item) => item.index);
+}
+
+function meaningfulTokens(value) {
+  return [...new Set(normalizeTerm(value)
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 3 && !LOCAL_STOP_WORDS.has(token)))];
+}
+
+function logFallback(error, message) {
+  console.warn(JSON.stringify({
+    event: 'media_search_fallback',
+    stage: error?.stage || 'gemini',
+    message: `${message} ${error instanceof Error ? error.message : String(error)}`
+  }));
 }
 
 async function fetchWithTimeout(url, options) {
