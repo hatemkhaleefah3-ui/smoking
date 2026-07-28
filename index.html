@@ -6,10 +6,12 @@
   <meta name="description" content="Build and publish structured lecture JSON as a permanent shareable webpage.">
   <title>Lecture Publisher</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="image-import.css">
   <link rel="stylesheet" href="smart-media-search.css">
   <script src="lecture-renderer.js" defer></script>
   <script src="clinical-v2-adapter.js" defer></script>
   <script src="integrated-v2-adapter.js" defer></script>
+  <script src="image-import.js" defer></script>
   <script src="app.js" defer></script>
   <script src="smart-media-search.js" defer></script>
 </head>
@@ -19,7 +21,7 @@
       <div>
         <p class="eyebrow">Reusable lecture publishing</p>
         <h1>Lecture Publisher</h1>
-        <p class="subtitle">Import one lecture JSON file, choose a design, and publish a permanent link that anyone can open later.</p>
+        <p class="subtitle">Import lecture JSON, add each labeled image, and publish a permanent previewable link.</p>
       </div>
       <span class="version-badge">Schema v1.0 + v2.0 + v2.1</span>
     </div>
@@ -66,7 +68,7 @@
         </label>
       </fieldset>
 
-      <div class="import-heading"><p class="step-label">Step 2</p><h2>Choose lecture JSON</h2></div>
+      <div class="import-heading"><p class="step-label">Step 2</p><h2>Import lecture JSON</h2></div>
       <label id="drop-zone" class="drop-zone" for="file-input">
         <span class="drop-icon" aria-hidden="true">↥</span>
         <span class="drop-title">Choose or drop a JSON file</span>
@@ -74,14 +76,10 @@
         <input id="file-input" type="file" accept="application/json,.json">
       </label>
 
-      <div class="button-row">
+      <div class="button-row build-row">
         <button id="build-button" class="button button-primary" type="button">Build</button>
-        <button id="preview-button" class="button button-secondary" type="button" disabled>Preview &amp; publish</button>
-        <button id="copy-link-button" class="button button-secondary" type="button" hidden disabled>Copy link</button>
       </div>
-      <p class="preview-help">After Build, Preview publishes the imported lecture and opens its permanent public URL. Before Build, it opens the example without saving it.</p>
-      <a id="published-link" class="published-link" hidden target="_blank" rel="noopener noreferrer"></a>
-      <div id="status" class="status status-neutral" role="status" aria-live="polite">Loading the designs and example lecture…</div>
+      <div id="status" class="status status-neutral" role="status" aria-live="polite">Loading the selected design…</div>
 
       <div id="document-details" class="document-details" hidden>
         <h3>Built lecture</h3>
@@ -92,16 +90,36 @@
           <div><dt>Blocks</dt><dd id="detail-blocks">—</dd></div>
         </dl>
       </div>
+
+      <section id="image-import-panel" class="image-import-panel" aria-labelledby="image-import-title" hidden>
+        <div class="import-heading">
+          <p class="step-label">Step 3</p>
+          <h2 id="image-import-title">Import labeled images</h2>
+        </div>
+        <p class="image-import-help">Choose the local image that matches each label from the JSON. Existing web images can be kept or replaced.</p>
+        <p id="image-import-summary" class="image-import-summary" aria-live="polite"></p>
+        <div id="image-import-list" class="image-import-list"></div>
+      </section>
+
+      <div class="import-heading publish-heading"><p class="step-label">Step 4</p><h2>Create and preview the link</h2></div>
+      <div class="button-row">
+        <button id="continue-button" class="button button-primary" type="button" hidden disabled>Continue</button>
+        <button id="preview-button" class="button button-secondary" type="button" hidden disabled>Preview</button>
+        <button id="copy-link-button" class="button button-secondary" type="button" hidden disabled>Copy link</button>
+      </div>
+      <p class="preview-help">Continue uploads the selected images and creates the permanent link. Preview only opens the finished lecture.</p>
+      <a id="published-link" class="published-link" hidden target="_blank" rel="noopener noreferrer"></a>
     </section>
 
     <aside class="panel workflow-panel" aria-labelledby="workflow-title">
-      <p class="step-label">Shareable workflow</p>
-      <h2 id="workflow-title">Build, publish and share</h2>
+      <p class="step-label">Image-aware workflow</p>
+      <h2 id="workflow-title">Import, add images, publish</h2>
       <ol class="workflow-list">
-        <li>Choose the JSON file and select <strong>Build</strong>.</li>
-        <li>Select a design and choose <strong>Preview &amp; publish</strong>.</li>
-        <li>Copy the permanent URL from the new page or the Copy link button.</li>
-        <li>Send it to anyone. The same link loads the saved lecture whenever it is opened.</li>
+        <li>Import the lecture JSON file.</li>
+        <li>Select <strong>Build</strong> to validate it and reveal every image label.</li>
+        <li>Choose one local image for each required label.</li>
+        <li>Select <strong>Continue</strong> to upload the images and create the permanent link.</li>
+        <li>Select <strong>Preview</strong> to open the finished website with its images.</li>
       </ol>
       <div class="example-note"><strong>Administration</strong><span>Stored links and storage cleanup are available at <code>/admin</code>.</span></div>
     </aside>
@@ -122,6 +140,6 @@
     </section>
   </main>
 
-  <footer class="site-footer"><div class="shell">Lecture JSON is stored privately in Cloudflare R2. Public links are served through the application API.</div></footer>
+  <footer class="site-footer"><div class="shell">Lecture JSON and imported images are stored privately in Cloudflare R2. Public links are served through the application API.</div></footer>
 </body>
 </html>
