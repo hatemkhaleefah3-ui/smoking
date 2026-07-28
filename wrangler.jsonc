@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "smoking",
-  "main": "worker/src/index.js",
+  "main": "worker/src/pages.js",
   "compatibility_date": "2026-07-27",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {

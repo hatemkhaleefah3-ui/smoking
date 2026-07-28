@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --check app.js && node --check lecture-renderer.js && node --check lecture.js && node --check admin.js && node --check worker/src/index.js && node scripts/test-renderer.mjs",
+    "test": "node --check app.js && node --check smart-media-search.js && node --check lecture-renderer.js && node --check lecture.js && node --check admin.js && node --check worker/src/index.js && node --check worker/src/pages.js && node --check worker/src/media-search.js && node --check functions/api/search.js && node scripts/test-renderer.mjs && node scripts/test-media-search.mjs",
     "dev": "npm run build && npx --yes wrangler@4.34.0 dev",
     "deploy": "npm run test && npm run build && npx --yes wrangler@4.34.0 deploy"
   }
