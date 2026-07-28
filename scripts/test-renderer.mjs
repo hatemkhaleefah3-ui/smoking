@@ -1,10 +1,16 @@
 import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { readIntegratedAssets } from './integrated-assets.mjs';
 
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const integratedAssets = await readIntegratedAssets(root);
 const context = { window: {}, URL, console };
 vm.createContext(context);
 vm.runInContext(await readFile(new URL('../lecture-renderer.js', import.meta.url), 'utf8'), context);
 vm.runInContext(await readFile(new URL('../clinical-v2-adapter.js', import.meta.url), 'utf8'), context);
+vm.runInContext(integratedAssets.adapter, context);
 const renderer = context.window.LectureRenderer;
 const input = JSON.parse(await readFile(new URL('../examples/lecture-output.example.json', import.meta.url), 'utf8'));
 const normalized = renderer.normalize(input);
@@ -53,4 +59,20 @@ for (const marker of ['<cite>Clinical source</cite>', 'callout-warning', 'key-po
 }
 if (/{{[A-Z0-9_]+}}/.test(clinicalHtml)) throw new Error('Clinical schema v2.0 has unresolved template tokens.');
 
-console.log('Renderer validation passed for all four designs and Clinical schema v2.0.');
+const integratedInput = JSON.parse(integratedAssets.example);
+const integrated = renderer.normalize(integratedInput);
+if (integrated.schemaVersion !== '2.1') throw new Error('Integrated Pathways schema 2.0 was not normalized to 2.1.');
+if (integrated._design !== 'integrated' || integrated._adapter !== 'integrated-pathways-v2') {
+  throw new Error('Integrated Pathways design metadata was not preserved.');
+}
+const integratedHtml = renderer.render(integrated, integratedAssets.template, 'integrated');
+for (const marker of [
+  'pharma-flow', 'biochem-flow', 'histo-stack', 'patho-flow', 'linear-flow',
+  'circular-diagram', 'image-block', 'callout-clinical', 'checklist', 'table-caption'
+]) {
+  if (!integratedHtml.includes(marker)) throw new Error(`Integrated Pathways did not render ${marker}.`);
+}
+if (!integratedHtml.includes(integrated.document.title)) throw new Error('Integrated Pathways did not render its example title.');
+if (/{{[A-Z0-9_]+}}/.test(integratedHtml)) throw new Error('Integrated Pathways has unresolved template tokens.');
+
+console.log('Renderer validation passed for all five designs, Clinical schema v2.0, and exact Integrated Pathways ZIP assets.');
