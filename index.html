@@ -6,8 +6,10 @@
   <meta name="description" content="Build and publish structured lecture JSON as a permanent shareable webpage.">
   <title>Lecture Publisher</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="smart-media-search.css">
   <script src="lecture-renderer.js" defer></script>
   <script src="app.js" defer></script>
+  <script src="smart-media-search.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -95,6 +97,21 @@
       </ol>
       <div class="example-note"><strong>Administration</strong><span>Stored links and storage cleanup are available at <code>/admin</code>.</span></div>
     </aside>
+
+    <section class="panel media-search-panel" aria-labelledby="media-search-title">
+      <div class="section-heading">
+        <p class="step-label">Smart media search</p>
+        <h2 id="media-search-title">Find Wikimedia Commons images</h2>
+      </div>
+      <p class="media-search-copy">Describe the image you need. Gemini refines your wording privately on the server, then Wikimedia Commons supplies up to five matching images.</p>
+      <form id="media-search-form" class="media-search-form" novalidate>
+        <label class="sr-only" for="media-search-input">Image search</label>
+        <input id="media-search-input" class="media-search-input" type="search" name="query" maxlength="200" autocomplete="off" placeholder="Example: detailed human heart anatomy illustration">
+        <button id="media-search-button" class="button button-primary" type="submit">Search</button>
+      </form>
+      <div id="media-search-status" class="status status-neutral" role="status" aria-live="polite">Enter a topic to search for reusable media.</div>
+      <div id="media-search-results" class="media-results-grid" hidden></div>
+    </section>
   </main>
 
   <footer class="site-footer"><div class="shell">Lecture JSON is stored privately in Cloudflare R2. Public links are served through the application API.</div></footer>
