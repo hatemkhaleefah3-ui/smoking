@@ -1,6 +1,7 @@
 const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_QUERY_LENGTH = 200;
 const REQUEST_TIMEOUT_MS = 12_000;
+const WIKIMEDIA_USER_AGENT = 'LecturePublisherMediaSearch/1.1 (https://github.com/hatemkhaleefah3-ui/smoking)';
 
 export async function handleMediaSearch(request, env) {
   if (request.method !== 'POST') {
@@ -126,14 +127,14 @@ async function searchWikimediaCommons(refinedTerm) {
     gsrnamespace: '6',
     prop: 'imageinfo',
     iiprop: 'url',
-    format: 'json',
-    origin: '*'
+    format: 'json'
   });
   const endpoint = `https://commons.wikimedia.org/w/api.php?${parameters}`;
   const response = await fetchWithTimeout(endpoint, {
     headers: {
       Accept: 'application/json',
-      'Api-User-Agent': 'LecturePublisher/1.0 (smart media search)'
+      'User-Agent': WIKIMEDIA_USER_AGENT,
+      'Api-User-Agent': WIKIMEDIA_USER_AGENT
     }
   });
 
@@ -143,7 +144,22 @@ async function searchWikimediaCommons(refinedTerm) {
     throw error;
   }
 
-  const result = await response.json();
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    const error = new Error('Wikimedia Commons returned invalid JSON.');
+    error.stage = 'wikimedia';
+    throw error;
+  }
+
+  if (result?.error) {
+    const code = typeof result.error.code === 'string' ? result.error.code : 'unknown';
+    const error = new Error(`Wikimedia Commons API error: ${code}.`);
+    error.stage = 'wikimedia';
+    throw error;
+  }
+
   const pages = Object.values(result?.query?.pages || {});
   const images = [];
   const seen = new Set();
