@@ -18,12 +18,15 @@ try {
   assert.match(source, /label:\s*definition\.label/);
   assert.match(source, /Gemini is understanding and searching/);
   assert.match(source, /cardState\.usefulCount/);
+  assert.match(source, /state\.activeSearches < 2/);
+  assert.match(source, /enqueueSearch\(definition\)/);
+  assert.match(source, /Waiting for Gemini search/);
   assert.doesNotMatch(source, /for \(const altText of definition\.altTexts\)/);
 
   const syntax = spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-  console.log('Combined carousel intent payload validation passed.');
+  console.log('Combined and queued carousel intent payload validation passed.');
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
