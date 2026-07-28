@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { writeIntegratedAssets } from './integrated-assets.mjs';
+import { patchIntentCarousel } from './intent-carousel-patch.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -21,6 +22,7 @@ for (const file of files) await cp(resolve(root, file), resolve(dist, file));
 await cp(resolve(root, 'templates'), resolve(dist, 'templates'), { recursive: true });
 await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true });
 await writeIntegratedAssets(root, dist);
+await patchIntentCarousel(dist);
 await cp(
   resolve(root, 'node_modules/mupdf/dist/mupdf-wasm.wasm'),
   resolve(dist, 'vendor/mupdf-wasm.wasm')
