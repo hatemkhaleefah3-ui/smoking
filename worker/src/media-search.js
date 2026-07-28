@@ -13,11 +13,6 @@ export async function handleMediaSearch(request, env) {
     return json({ error: 'Cross-origin requests are not allowed.' }, 403);
   }
 
-  if (!env?.GEMINI_API_KEY) {
-    console.error(JSON.stringify({ event: 'media_search_error', stage: 'configuration', message: 'GEMINI_API_KEY is missing.' }));
-    return json({ error: 'Something went wrong' }, 500);
-  }
-
   let input;
   try {
     input = await request.json();
@@ -28,17 +23,47 @@ export async function handleMediaSearch(request, env) {
   const query = typeof input?.query === 'string' ? input.query.trim().slice(0, MAX_QUERY_LENGTH) : '';
   if (!query) return json({ error: 'Query is required.' }, 400);
 
+  const refinement = await refineSearchTermSafely(query, env);
+
   try {
-    const refinedTerm = await refineSearchTerm(query, env);
-    const images = await searchWikimediaCommons(refinedTerm);
+    let images = await searchWikimediaCommons(refinement.term);
+
+    // A refined term can occasionally be too narrow. Retry the visitor's original
+    // words before reporting zero results.
+    if (images.length === 0 && refinement.usedGemini && normalizeTerm(refinement.term) !== normalizeTerm(query)) {
+      images = await searchWikimediaCommons(query);
+    }
+
     return json({ images });
   } catch (error) {
     console.error(JSON.stringify({
       event: 'media_search_error',
-      stage: error?.stage || 'unknown',
+      stage: error?.stage || 'wikimedia',
       message: error instanceof Error ? error.message : String(error)
     }));
     return json({ error: 'Something went wrong' }, 502);
+  }
+}
+
+async function refineSearchTermSafely(query, env) {
+  if (!env?.GEMINI_API_KEY) {
+    console.warn(JSON.stringify({
+      event: 'media_search_fallback',
+      stage: 'configuration',
+      message: 'GEMINI_API_KEY is missing; using the original Wikimedia query.'
+    }));
+    return { term: query, usedGemini: false };
+  }
+
+  try {
+    return { term: await refineSearchTerm(query, env), usedGemini: true };
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'media_search_fallback',
+      stage: error?.stage || 'gemini',
+      message: error instanceof Error ? error.message : String(error)
+    }));
+    return { term: query, usedGemini: false };
   }
 }
 
@@ -148,6 +173,10 @@ async function fetchWithTimeout(url, options) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function normalizeTerm(value) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function json(data, status = 200, extraHeaders = {}) {
