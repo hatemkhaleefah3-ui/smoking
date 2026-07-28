@@ -17,6 +17,7 @@ try {
       assert.equal(options.headers['x-goog-api-key'], 'test-key');
       return Response.json({ candidates: [{ content: { parts: [{ text: 'human heart anatomy' }] } }] });
     }
+    assertCommonsRequest(url, options);
     return commonsResponse('heart-one.jpg', 'heart-two.jpg');
   };
 
@@ -36,9 +37,10 @@ try {
   // A missing key must not break image search. The endpoint should call
   // Wikimedia directly with the visitor's original query.
   const missingKeyUrls = [];
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
     missingKeyUrls.push(String(url));
     assert.doesNotMatch(String(url), /generativelanguage\.googleapis\.com/);
+    assertCommonsRequest(url, options);
     return commonsResponse('heart-fallback.jpg');
   };
   const missingKeyResponse = await worker.fetch(request({ query: 'Heart' }), {}, {});
@@ -51,11 +53,12 @@ try {
   // Invalid, restricted, or unavailable Gemini access should also fall back to
   // Wikimedia rather than returning a generic frontend failure.
   let fallbackCalls = 0;
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
     fallbackCalls += 1;
     if (String(url).includes('generativelanguage.googleapis.com')) {
       return new Response('forbidden', { status: 403 });
     }
+    assertCommonsRequest(url, options);
     return commonsResponse('lungs-fallback.jpg');
   };
   const geminiFailureResponse = await worker.fetch(request({ query: 'lungs' }), { GEMINI_API_KEY: 'invalid-key' }, {});
@@ -65,12 +68,22 @@ try {
     images: ['https://upload.wikimedia.org/lungs-fallback.jpg']
   });
 
+  // Wikimedia can report an API-level error with HTTP 200. Treat that as an
+  // upstream failure instead of silently returning an empty result set.
+  globalThis.fetch = async (url, options = {}) => {
+    assertCommonsRequest(url, options);
+    return Response.json({ error: { code: 'baduseragent', info: 'Client identification required.' } });
+  };
+  const wikimediaApiErrorResponse = await worker.fetch(request({ query: 'heart' }), {}, {});
+  assert.equal(wikimediaApiErrorResponse.status, 502);
+  assert.deepEqual(await wikimediaApiErrorResponse.json(), { error: 'Something went wrong' });
+
   globalThis.fetch = async () => new Response('failed', { status: 500 });
   const wikimediaFailureResponse = await worker.fetch(request({ query: 'lungs' }), {}, {});
   assert.equal(wikimediaFailureResponse.status, 502);
   assert.deepEqual(await wikimediaFailureResponse.json(), { error: 'Something went wrong' });
 
-  console.log('Media search routing and Gemini fallback validation passed.');
+  console.log('Media search routing, fallback and Wikimedia identification validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -81,6 +94,13 @@ function request(body) {
     headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
     body: JSON.stringify(body)
   });
+}
+
+function assertCommonsRequest(url, options) {
+  assert.match(String(url), /^https:\/\/commons\.wikimedia\.org\/w\/api\.php\?/);
+  assert.doesNotMatch(String(url), /(?:^|[?&])origin=/);
+  assert.match(options.headers['User-Agent'], /^LecturePublisherMediaSearch\/1\.1 \(https:\/\/github\.com\/hatemkhaleefah3-ui\/smoking\)$/);
+  assert.equal(options.headers['Api-User-Agent'], options.headers['User-Agent']);
 }
 
 function commonsResponse(...filenames) {
