@@ -10,7 +10,8 @@ const normalized = renderer.normalize(input);
 for (const [design, filename] of Object.entries({
   classic: 'lecture-template.html',
   enhanced: 'lecture-template-enhanced.html',
-  editorial: 'lecture-template-editorial.html'
+  editorial: 'lecture-template-editorial.html',
+  clinical: 'lecture-template-clinical.html'
 })) {
   const template = await readFile(new URL(`../templates/${filename}`, import.meta.url), 'utf8');
   const html = renderer.render(normalized, template, design);
@@ -18,4 +19,4 @@ for (const [design, filename] of Object.entries({
   if (/{{[A-Z0-9_]+}}/.test(html)) throw new Error(`${design} has unresolved template tokens.`);
   if (!html.includes('lecture-section')) throw new Error(`${design} did not render lecture sections.`);
 }
-console.log('Renderer validation passed for all three designs.');
+console.log('Renderer validation passed for all four designs.');
