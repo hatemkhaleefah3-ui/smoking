@@ -3,10 +3,17 @@
 const DESIGNS = {
   classic: { name: 'Classic Academic', templateUrl: 'templates/lecture-template.html' },
   enhanced: { name: 'Enhanced Modern', templateUrl: 'templates/lecture-template-enhanced.html' },
-  editorial: { name: 'Editorial Journal', templateUrl: 'templates/lecture-template-editorial.html' }
+  editorial: { name: 'Editorial Journal', templateUrl: 'templates/lecture-template-editorial.html' },
+  clinical: { name: 'Clinical Notes', templateUrl: 'templates/lecture-template-clinical.html' }
 };
 const EXAMPLE_URL = 'examples/lecture-output.example.json';
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const CLINICAL_STORAGE_DESIGN = 'classic';
+
+const clinicalStylesheet = document.createElement('link');
+clinicalStylesheet.rel = 'stylesheet';
+clinicalStylesheet.href = 'clinical-design.css';
+document.head.append(clinicalStylesheet);
 
 const elements = {
   fileInput: document.querySelector('#file-input'),
@@ -25,14 +32,7 @@ const elements = {
   designInputs: [...document.querySelectorAll('input[name="design"]')]
 };
 
-const state = {
-  templates: new Map(),
-  exampleData: null,
-  selectedFile: null,
-  documentData: null,
-  publication: null
-};
-
+const state = { templates: new Map(), exampleData: null, selectedFile: null, documentData: null, publication: null };
 initialize();
 
 async function initialize() {
@@ -68,11 +68,11 @@ function bindEvents() {
       setStatus(error.message, 'error');
     }
   }));
-  ['dragenter', 'dragover'].forEach((eventName) => elements.dropZone.addEventListener(eventName, (event) => {
+  ['dragenter', 'dragover'].forEach((name) => elements.dropZone.addEventListener(name, (event) => {
     event.preventDefault();
     elements.dropZone.classList.add('is-dragging');
   }));
-  ['dragleave', 'drop'].forEach((eventName) => elements.dropZone.addEventListener(eventName, (event) => {
+  ['dragleave', 'drop'].forEach((name) => elements.dropZone.addEventListener(name, (event) => {
     event.preventDefault();
     elements.dropZone.classList.remove('is-dragging');
   }));
@@ -83,19 +83,14 @@ function bindEvents() {
 }
 
 function selectDesignCard() {
-  document.querySelectorAll('.design-option').forEach((card) => {
-    card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked));
-  });
+  document.querySelectorAll('.design-option').forEach((card) => card.classList.toggle('is-selected', Boolean(card.querySelector('input')?.checked)));
 }
 
 function chooseFile(file) {
   state.selectedFile = file;
   clearPublication();
   elements.selectedFileName.textContent = `Selected: ${file.name} (${formatBytes(file.size)})`;
-  if (file.size > MAX_UPLOAD_BYTES) {
-    setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
-    return;
-  }
+  if (file.size > MAX_UPLOAD_BYTES) return setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
   setStatus(`Selected ${file.name}. Select Build to validate it.`, 'neutral');
 }
 
@@ -104,7 +99,6 @@ async function buildSelectedFile() {
   if (!file) return setStatus('Choose a JSON file first.', 'error');
   if (!file.name.toLowerCase().endsWith('.json')) return setStatus('The selected file must use the .json extension.', 'error');
   if (file.size > MAX_UPLOAD_BYTES) return setStatus('This file is larger than the current 25 MB publishing limit.', 'error');
-
   try {
     const text = await file.text();
     state.documentData = LectureRenderer.normalize(JSON.parse(LectureRenderer.stripOptionalCodeFence(text)));
@@ -124,18 +118,16 @@ async function previewLecture() {
   if (!previewWindow) return setStatus('The preview window was blocked. Allow pop-ups and try again.', 'error');
   previewWindow.document.write('<!doctype html><title>Loading…</title><p style="font-family:system-ui;padding:24px">Preparing lecture preview…</p>');
   previewWindow.document.close();
-
   try {
     if (!state.documentData) {
-      const template = await loadTemplate(selectedDesignId());
-      const html = LectureRenderer.render(state.exampleData, template, selectedDesignId());
+      const designId = selectedDesignId();
+      const html = LectureRenderer.render(state.exampleData, await loadTemplate(designId), designId);
       previewWindow.document.open();
       previewWindow.document.write(html);
       previewWindow.document.close();
-      setStatus(`Opened the example lecture with ${DESIGNS[selectedDesignId()].name}.`, 'success');
+      setStatus(`Opened the example lecture with ${DESIGNS[designId].name}.`, 'success');
       return;
     }
-
     const publication = await publishCurrentLecture();
     previewWindow.location.replace(publication.url);
     setStatus(`Published “${state.documentData.document.title}”. Its permanent link is ready to share.`, 'success');
@@ -148,15 +140,14 @@ async function previewLecture() {
 async function publishCurrentLecture() {
   const designId = selectedDesignId();
   if (state.publication?.designId === designId) return state.publication;
-
-  const payload = JSON.stringify(state.documentData);
+  const publicationData = designId === 'clinical' ? { ...state.documentData, _design: 'clinical' } : state.documentData;
+  const payload = JSON.stringify(publicationData);
   if (new Blob([payload]).size > MAX_UPLOAD_BYTES) throw new Error('The normalized lecture is larger than the 25 MB publishing limit.');
-
   const response = await fetch('/api/lectures', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'X-Design-Id': designId,
+      'X-Design-Id': designId === 'clinical' ? CLINICAL_STORAGE_DESIGN : designId,
       'X-Schema-Version': state.documentData.schemaVersion,
       'X-Lecture-Title': encodeURIComponent(state.documentData.document.title.slice(0, 200))
     },
@@ -164,7 +155,6 @@ async function publishCurrentLecture() {
   });
   const result = await readJsonResponse(response);
   if (!response.ok) throw new Error(result.error || `Publishing failed with status ${response.status}.`);
-
   state.publication = { id: result.id, url: result.url, designId };
   elements.copyButton.hidden = false;
   elements.copyButton.disabled = false;
@@ -187,8 +177,10 @@ async function copyPublishedLink() {
 
 async function loadTemplate(designId) {
   if (state.templates.has(designId)) return state.templates.get(designId);
-  const response = await fetch(DESIGNS[designId].templateUrl, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`Could not load ${DESIGNS[designId].name}.`);
+  const design = DESIGNS[designId];
+  if (!design) throw new Error('Unsupported lecture design.');
+  const response = await fetch(design.templateUrl, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`Could not load ${design.name}.`);
   const template = await response.text();
   state.templates.set(designId, template);
   return template;
@@ -200,10 +192,7 @@ async function fetchJson(url) {
   return response.json();
 }
 
-function selectedDesignId() {
-  return elements.designInputs.find((input) => input.checked)?.value || 'classic';
-}
-
+function selectedDesignId() { return elements.designInputs.find((input) => input.checked)?.value || 'classic'; }
 function updateDocumentDetails(data) {
   const documentData = data.document;
   elements.detailTitle.textContent = documentData.title;
@@ -212,7 +201,6 @@ function updateDocumentDetails(data) {
   elements.detailBlocks.textContent = String(documentData.sections.reduce((total, section) => total + LectureRenderer.countBlocks(section.blocks), 0));
   elements.documentDetails.hidden = false;
 }
-
 function clearPublication() {
   state.publication = null;
   elements.copyButton.hidden = true;
@@ -221,12 +209,7 @@ function clearPublication() {
   elements.publishedLink.removeAttribute('href');
   elements.publishedLink.textContent = '';
 }
-
-function setStatus(message, type) {
-  elements.status.textContent = message;
-  elements.status.className = `status status-${type}`;
-}
-
+function setStatus(message, type) { elements.status.textContent = message; elements.status.className = `status status-${type}`; }
 function showPreviewError(previewWindow, message) {
   previewWindow.document.open();
   previewWindow.document.write('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Publishing failed</title><main style="font-family:system-ui;max-width:680px;margin:12vh auto;padding:24px"><h1>Publishing failed</h1><p id="publishing-error"></p><p><a href="/">Return to Lecture Publisher</a></p></main>');
@@ -234,14 +217,11 @@ function showPreviewError(previewWindow, message) {
   const errorElement = previewWindow.document.querySelector('#publishing-error');
   if (errorElement) errorElement.textContent = message;
 }
-
 async function readJsonResponse(response) {
   const text = await response.text();
   if (!text) return {};
-  try { return JSON.parse(text); }
-  catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
+  try { return JSON.parse(text); } catch { return { error: text.trim().slice(0, 300) || `Request failed with status ${response.status}.` }; }
 }
-
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
