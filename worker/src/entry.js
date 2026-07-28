@@ -10,17 +10,17 @@ export default {
     try {
       if (url.pathname === '/api/pdf-extractions' && request.method === 'POST') {
         assertSameOrigin(request, url);
-        requirePdfExtractionStorage(env);
+        const extractionEnv = pdfExtractionEnv(env);
         configureMupdfAssets(env.ASSETS);
-        await ensurePdfExtractionSchema(env, HttpError);
-        return createPdfExtraction(request, env, url, { HttpError, json });
+        await ensurePdfExtractionSchema(extractionEnv, HttpError);
+        return createPdfExtraction(request, extractionEnv, url, { HttpError, json });
       }
 
       const downloadMatch = url.pathname.match(/^\/api\/pdf-extractions\/([0-9a-f-]{36})\/download$/i);
       if (downloadMatch && request.method === 'GET') {
-        requirePdfExtractionStorage(env);
-        await ensurePdfExtractionSchema(env, HttpError);
-        return downloadPdfExtraction(downloadMatch[1], env, { HttpError });
+        const extractionEnv = pdfExtractionEnv(env);
+        await ensurePdfExtractionSchema(extractionEnv, HttpError);
+        return downloadPdfExtraction(downloadMatch[1], extractionEnv, { HttpError });
       }
 
       return lectureWorker.fetch(request, env, ctx);
@@ -37,10 +37,12 @@ export default {
   }
 };
 
-function requirePdfExtractionStorage(env) {
-  if (!env.PDF_EXTRACTIONS) {
-    throw new HttpError(500, 'R2 binding “PDF_EXTRACTIONS” is not configured for this environment.');
+function pdfExtractionEnv(env) {
+  const bucket = env.PDF_EXTRACTIONS || env.LECTURES;
+  if (!bucket) {
+    throw new HttpError(500, 'An R2 storage binding is not configured for this environment.');
   }
+  return Object.assign(Object.create(env), { PDF_EXTRACTIONS: bucket });
 }
 
 function assertSameOrigin(request, url) {
