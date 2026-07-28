@@ -63,8 +63,10 @@ async function initializeMupdf() {
   const wasmBinary = new Uint8Array(await response.arrayBuffer());
   globalThis.$libmupdf_wasm_Module = { wasmBinary };
   try {
-    const module = await import('mupdf');
-    return module.default || module;
+    // MuPDF's documented browser API uses the ESM namespace exports. The default
+    // compatibility wrapper can contain methods that are not present in the core
+    // Page implementation, including the failing getImages() delegation.
+    return await import('mupdf');
   } finally {
     delete globalThis.$libmupdf_wasm_Module;
   }
@@ -100,15 +102,19 @@ function extractImages(mupdf, pdfBytes, selectors) {
 
 function extractPageImages(mupdf, document, pageNumber, requestedPositions) {
   let page;
-  let device;
+  let structuredText;
   try {
     page = document.loadPage(pageNumber - 1);
     const requested = requestedPositions ? new Set(requestedPositions) : null;
     const extracted = [];
     let position = 0;
 
-    device = new mupdf.Device({
-      fillImage(image) {
+    // StructuredText's preserve-images option is part of MuPDF's core browser API.
+    // It reports every displayed image through onImageBlock without relying on the
+    // optional high-level Page.getImages() wrapper.
+    structuredText = page.toStructuredText('preserve-images');
+    structuredText.walk({
+      onImageBlock(_bbox, _transform, image) {
         position += 1;
         if (!requested || requested.has(position)) {
           extracted.push({
@@ -121,8 +127,6 @@ function extractPageImages(mupdf, document, pageNumber, requestedPositions) {
       }
     });
 
-    page.runPageContents(device, mupdf.Matrix.identity);
-
     if (requestedPositions) {
       const missing = requestedPositions.find((candidate) => candidate > position);
       if (missing) {
@@ -132,7 +136,7 @@ function extractPageImages(mupdf, document, pageNumber, requestedPositions) {
 
     return extracted;
   } finally {
-    safeDestroy(device);
+    safeDestroy(structuredText);
     safeDestroy(page);
   }
 }
