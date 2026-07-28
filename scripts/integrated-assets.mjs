@@ -6,17 +6,17 @@ const ASSETS = {
   adapter: {
     parts: 'embedded/integrated-pathways/adapter',
     output: 'integrated-v2-adapter.js',
-    sha256: 'd489b496449bfe1f8539c65441610205f7ce37db5d8318d47fa563fb7cd6dc1e'
+    sha256: '4a50e4f3303d7609d422d4e75c11e80c5827fd3b4fb5c8e0ec74aba9d584d59e'
   },
   template: {
     parts: 'embedded/integrated-pathways/template',
     output: 'templates/lecture-template-integrated.html',
-    sha256: 'd5ea5c00563636abce0908db1074cead2ec0b3a16aa5805ae84ad8e2f1113adb'
+    sha256: 'a4632aa010d28c0db42abc813de30a2580dd3311a2fe97d2ead58b9042b8c5a4'
   },
   example: {
     parts: 'embedded/integrated-pathways/example',
     output: 'examples/lecture-system-v2.example.json',
-    sha256: '5c035a5bc8ebcba7780080a57c2033e45832943a4661dc7cb2c671341fd86308'
+    sha256: '8b6688959416d40d948dc1ec59bd3610eafb586654d14c3827996d711b764f8e'
   }
 };
 
