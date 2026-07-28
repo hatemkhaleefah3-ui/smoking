@@ -31,33 +31,45 @@ const browserNodeBuiltins = {
     context.onLoad({ filter: /.*/, namespace: 'browser-node-builtin' }, ({ path }) => ({
       loader: 'js',
       contents: path === 'module'
-        ? `export function createRequire() { return () => { throw new Error('Node require is unavailable in this Worker.'); }; }\nexport default { createRequire };`
-        : `const unavailable = () => { throw new Error('Node ${path} is unavailable in this Worker.'); };\nexport const readFileSync = unavailable;\nexport const readFile = unavailable;\nexport const dirname = unavailable;\nexport const resolve = unavailable;\nexport const join = unavailable;\nexport const promises = {};\nexport default {};`
+        ? `export function createRequire() { return () => { throw new Error('Node require is unavailable in this browser runtime.'); }; }\nexport default { createRequire };`
+        : `const unavailable = () => { throw new Error('Node ${path} is unavailable in this browser runtime.'); };\nexport const readFileSync = unavailable;\nexport const readFile = unavailable;\nexport const dirname = unavailable;\nexport const resolve = unavailable;\nexport const join = unavailable;\nexport const promises = {};\nexport default {};`
     }));
   }
 };
 
-// Cloudflare Pages Advanced Mode runs the bundled Module Worker at dist/_worker.js.
-// MuPDF's WASM binary is a static asset so it does not count toward Worker script size.
-// MuPDF contains runtime-guarded Node branches; remove them from this browser/Worker bundle
-// so Cloudflare Pages does not try to resolve Node built-ins while rebundling _worker.js.
-await build({
-  entryPoints: [resolve(root, 'worker/src/entry.js')],
-  outfile: resolve(dist, '_worker.js'),
+const browserBundleOptions = {
   bundle: true,
   format: 'esm',
   platform: 'browser',
   target: 'es2022',
-  conditions: ['worker', 'browser', 'import', 'default'],
+  conditions: ['browser', 'import', 'default'],
   mainFields: ['browser', 'module', 'main'],
   define: { process: 'undefined' },
   plugins: [browserNodeBuiltins],
   legalComments: 'inline',
   logLevel: 'info'
+};
+
+// Cloudflare Pages Advanced Mode runs this small Module Worker. CPU-heavy PDF
+// decoding happens in the browser and the Worker only stores the finished result.
+await build({
+  ...browserBundleOptions,
+  entryPoints: [resolve(root, 'worker/src/entry.js')],
+  outfile: resolve(dist, '_worker.js'),
+  conditions: ['worker', 'browser', 'import', 'default']
+});
+
+// MuPDF and fflate run in the user's browser, outside Cloudflare Worker CPU and
+// WebAssembly restrictions. The WASM binary remains a cacheable static asset.
+await build({
+  ...browserBundleOptions,
+  entryPoints: [resolve(root, 'browser/pdf-extractor-runtime.js')],
+  outfile: resolve(dist, 'pdf-extractor-runtime.js'),
+  minify: true
 });
 
 // A second Cloudflare Workers build is connected to the same repository. Wrangler
 // must not publish the Pages server module as a public static asset.
 await writeFile(resolve(dist, '.assetsignore'), '_worker.js\n');
 
-console.log(`Built Pages assets and PDF extraction worker in ${dist}`);
+console.log(`Built Pages assets, browser PDF runtime, and storage worker in ${dist}`);
