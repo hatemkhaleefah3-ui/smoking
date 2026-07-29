@@ -36,7 +36,8 @@ export async function handleVisualCycleMediaSearch(request, env) {
   const label = cleanText(input?.label, 240) || imageId || 'Lecture image';
 
   try {
-    const grounded = await createGroundedVisualBrief({ altTexts, imageId, label }, env);
+    const groundedResponse = await createGroundedVisualBrief({ altTexts, imageId, label }, env);
+    const grounded = normalizeGroundedBrief(groundedResponse, altTexts, label, imageId);
     const accepted = new Map();
     const seenUrls = new Set();
     const usedQueries = new Set();
@@ -386,6 +387,21 @@ async function callGeminiStructured({ parts, schema, env, maxOutputTokens, googl
   return {
     data,
     grounding: extractGrounding(candidate?.groundingMetadata)
+  };
+}
+
+function normalizeGroundedBrief(result, altTexts, label, imageId) {
+  const data = result?.data || {};
+  const keyConcepts = normalizeTexts(data.keyConcepts, 12, 180);
+  const expectedVisualFeatures = normalizeTexts(data.expectedVisualFeatures, 16, 240);
+  return {
+    data: {
+      visualBrief: cleanText(data.visualBrief, 1000) || altTexts.join(' ').slice(0, 1000),
+      keyConcepts: keyConcepts.length ? keyConcepts : normalizeTexts([label, imageId], 4, 180),
+      expectedVisualFeatures,
+      firstWikimediaQuery: cleanQuery(data.firstWikimediaQuery)
+    },
+    grounding: result?.grounding || { used: false, queries: [], sources: [] }
   };
 }
 
