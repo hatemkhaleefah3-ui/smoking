@@ -16,6 +16,7 @@ const dist = resolve(root, 'dist');
 const files = [
   'index.html', 'styles.css', 'image-import.css', 'pdf-image-autofill.css', 'image-candidate-carousel.css', 'pdf-extractor.css',
   'app.js', 'image-import.js', 'pdf-image-autofill.js', 'image-candidate-carousel.js', 'pdf-extractor.js',
+  'media-search-runtime-release.js',
   'lecture-renderer.js', 'clinical-v2-adapter.js',
   'smart-media-search.css', 'smart-media-search.js',
   'lecture.html', 'lecture.js', 'admin.html', 'admin.css', 'admin.js', '404.html'
