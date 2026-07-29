@@ -19,6 +19,8 @@ export async function patchV4ModelApiCompatibility() {
     configuredModel,
     'gemini-2.5-flash-lite',
     'gemini-2.5-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-2.0-flash',
     'gemini-3.1-flash-lite'
   ]);
   const requestParts = googleSearch
@@ -108,5 +110,5 @@ export async function patchV4ModelApiCompatibility() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await patchV4ModelApiCompatibility();
-  console.log('Patched V4 with sanitized legacy generateContent schema fields.');
+  console.log('Patched V4 with sanitized legacy generateContent schema fields and 2.0 fallbacks.');
 }
