@@ -12,7 +12,7 @@ export async function generateV4RuntimeEngine() {
   source = replaceRequired(
     source,
     "const USER_AGENT = 'LecturePublisherMultiSourceSearch/4.0 (https://github.com/hatemkhaleefah3-ui/smoking)';",
-    "const USER_AGENT = 'LecturePublisherMultiSourceSearch/4.1 (https://github.com/hatemkhaleefah3-ui/smoking)';",
+    "const USER_AGENT = 'LecturePublisherMultiSourceSearch/4.2 (https://github.com/hatemkhaleefah3-ui/smoking)';",
     'runtime user agent'
   );
 
@@ -25,9 +25,51 @@ export async function generateV4RuntimeEngine() {
 
   source = replaceRequired(
     source,
+    '    const groundedResponse = await createGroundedVisualBrief({ altTexts, imageId, label, searchRun }, env);\n    const grounded = normalizeGroundedBrief(groundedResponse, altTexts, label, imageId);',
+    `    const groundedResponse = await createGroundedVisualBrief({ altTexts, imageId, label, searchRun }, env);
+    const geminiModelsUsed = new Set();
+    if (groundedResponse?.model) geminiModelsUsed.add(groundedResponse.model);
+    const grounded = normalizeGroundedBrief(groundedResponse, altTexts, label, imageId);`,
+    'grounding model trace'
+  );
+
+  source = replaceRequired(
+    source,
+    `      const review = await reviewCycleImages({
+        cycle,
+        query,
+        candidates: loadedResult.loaded,
+        altTexts,
+        imageId,
+        label,
+        visualBrief: grounded.data.visualBrief,
+        keyConcepts: grounded.data.keyConcepts,
+        expectedVisualFeatures: grounded.data.expectedVisualFeatures,
+        acceptedCount: accepted.size,
+        usedQueries: [...usedQueries]
+      }, env);`,
+    `      const review = await reviewCycleImages({
+        cycle,
+        query,
+        candidates: loadedResult.loaded,
+        altTexts,
+        imageId,
+        label,
+        visualBrief: grounded.data.visualBrief,
+        keyConcepts: grounded.data.keyConcepts,
+        expectedVisualFeatures: grounded.data.expectedVisualFeatures,
+        acceptedCount: accepted.size,
+        usedQueries: [...usedQueries]
+      }, env);
+      if (review.model) geminiModelsUsed.add(review.model);`,
+    'review model trace'
+  );
+
+  source = replaceRequired(
+    source,
     "      engine: 'multi-source-v4',",
-    "      engine: 'multi-source-v4-runtime',",
-    'runtime engine label'
+    "      engine: 'multi-source-v4-runtime',\n      geminiModelsUsed: [...geminiModelsUsed],",
+    'runtime engine label and models'
   );
 
   source = replaceRequired(
@@ -48,23 +90,30 @@ export async function generateV4RuntimeEngine() {
   }`,
     `  } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const quotaExhausted = /(?:429|RESOURCE_EXHAUSTED|quota|rate limit)/i.test(message);
     console.warn(JSON.stringify({
-      event: 'multisource_v4_runtime_fallback',
-      message
+      event: 'multisource_v4_runtime_failure',
+      message,
+      quotaExhausted
     }));
-    if (input?.diagnosticMode === true) {
-      return Response.json({
-        engine: 'multi-source-v4-runtime',
-        diagnosticFailure: true,
-        error: message
-      }, {
-        status: 502,
-        headers: { 'Cache-Control': 'no-store' }
-      });
-    }
-    return null;
+    return Response.json({
+      engine: 'multi-source-v4-runtime',
+      diagnosticFailure: input?.diagnosticMode === true,
+      quotaExhausted,
+      retryable: quotaExhausted || /(?:500|502|503|504|timeout|aborted)/i.test(message),
+      images: [],
+      imageResults: [],
+      usefulCount: 0,
+      error: quotaExhausted
+        ? 'Gemini search quota is temporarily exhausted. No fallback images were returned.'
+        : message,
+      diagnosticError: input?.diagnosticMode === true ? message : undefined
+    }, {
+      status: quotaExhausted ? 503 : 502,
+      headers: { 'Cache-Control': 'no-store' }
+    });
   }`,
-    'diagnostic runtime failure response'
+    'never use irrelevant legacy fallback'
   );
 
   source = replaceRequired(
@@ -103,12 +152,56 @@ export async function generateV4RuntimeEngine() {
 
   source = replaceRequired(
     source,
-    '  if (!response.ok) throw new Error(`Gemini returned ${response.status}.`);',
-    `  if (!response.ok) {
+    `  const model = typeof env.GEMINI_MODEL === 'string' && env.GEMINI_MODEL.trim()
+    ? env.GEMINI_MODEL.trim()
+    : DEFAULT_GEMINI_MODEL;
+  const endpoint = \`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(model)}:generateContent\`;`,
+    `  const configuredModel = typeof env.GEMINI_MODEL === 'string' && env.GEMINI_MODEL.trim()
+    ? env.GEMINI_MODEL.trim()
+    : DEFAULT_GEMINI_MODEL;
+  const modelCandidates = uniqueGeminiModels([
+    configuredModel,
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-flash-lite'
+  ]);`,
+    'Gemini model candidates'
+  );
+
+  source = replaceRequired(
+    source,
+    `  const response = await fetchWithTimeout(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(\`Gemini returned \${response.status}.\`);
+  const payload = await response.json();`,
+    `  let response = null;
+  let selectedModel = '';
+  const failures = [];
+  for (let index = 0; index < modelCandidates.length; index += 1) {
+    const model = modelCandidates[index];
+    const endpoint = \`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(model)}:generateContent\`;
+    response = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify(body)
+    });
+    if (response.ok) {
+      selectedModel = model;
+      break;
+    }
     const detail = await response.text().catch(() => '');
-    throw new Error(\`Gemini returned \${response.status}\${detail ? \`: \${detail.slice(0, 500)}\` : '.'}\`);
-  }`,
-    'Gemini response detail'
+    failures.push(\`\${model}: HTTP \${response.status}\${detail ? \` \${detail.slice(0, 420)}\` : ''}\`);
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable) break;
+    if (index < modelCandidates.length - 1) await delay(250 * (2 ** index));
+  }
+  if (!response?.ok || !selectedModel) {
+    throw new Error(\`Gemini models unavailable: \${failures.join(' | ')}\`);
+  }
+  const payload = await response.json();`,
+    'Gemini quota failover loop'
   );
 
   source = replaceRequired(
@@ -136,6 +229,50 @@ export async function generateV4RuntimeEngine() {
     'grounded JSON extraction'
   );
 
+  source = replaceRequired(
+    source,
+    '  return { data, grounding: extractGrounding(candidate?.groundingMetadata) };',
+    '  return { data, grounding: extractGrounding(candidate?.groundingMetadata), model: selectedModel };',
+    'selected Gemini model result'
+  );
+
+  source = replaceRequired(
+    source,
+    `  return {
+    decisions: normalizeStrictDecisions(result.data?.decisions, context.candidates.length),
+    nextQuery: cleanQuery(result.data?.nextQuery)
+  };`,
+    `  return {
+    decisions: normalizeStrictDecisions(result.data?.decisions, context.candidates.length),
+    nextQuery: cleanQuery(result.data?.nextQuery),
+    model: result.model
+  };`,
+    'review selected model result'
+  );
+
+  source = replaceRequired(
+    source,
+    'async function fetchWithTimeout(url, options) {',
+    `function uniqueGeminiModels(values) {
+  const output = [];
+  const seen = new Set();
+  for (const value of values) {
+    const model = typeof value === 'string' ? value.trim() : '';
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    output.push(model);
+  }
+  return output;
+}
+
+function delay(milliseconds) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+async function fetchWithTimeout(url, options) {`,
+    'Gemini failover helpers'
+  );
+
   await writeFile(outputPath, source, 'utf8');
   return outputPath;
 }
@@ -147,5 +284,5 @@ function replaceRequired(source, search, replacement, label) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await generateV4RuntimeEngine();
-  console.log('Generated live-compatible V4 media engine.');
+  console.log('Generated quota-resilient V4 media engine.');
 }
