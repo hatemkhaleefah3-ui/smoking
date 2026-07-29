@@ -45,12 +45,14 @@ export async function patchRefreshMediaResults(distDirectory) {
     "        ? 'Multi-source v2'",
     "        : result.multiSource === true ? 'Multi-source legacy' : 'Wikimedia-only fallback';"
   ].join('\n'), [
-    "      cardState.engineLabel = result.engine === 'multi-source-v3'",
-    "        ? `Multi-source v3 · run ${Number(result.searchRun) || cardState.searchRun}`",
-    "        : result.engine === 'multi-source-v2'",
-    "          ? 'Multi-source v2'",
-    "          : result.multiSource === true ? 'Multi-source legacy' : 'Wikimedia-only fallback';"
-  ].join('\n'), 'V3 engine label');
+    "      cardState.engineLabel = result.engine === 'multi-source-v4'",
+    "        ? `Multi-source v4 · run ${Number(result.searchRun) || cardState.searchRun}`",
+    "        : result.engine === 'multi-source-v3'",
+    "          ? `Multi-source v3 · run ${Number(result.searchRun) || cardState.searchRun}`",
+    "          : result.engine === 'multi-source-v2'",
+    "            ? 'Multi-source v2'",
+    "            : result.multiSource === true ? 'Multi-source legacy' : 'Wikimedia-only fallback';"
+  ].join('\n'), 'strict engine label');
 
   source = replaceRequired(source, '  function formatProviderSummary(sourceCounts, providerDiagnostics) {', `  function prepareAllCardsForFreshSearch() {
     for (const definition of state.definitions) prepareCardForFreshSearch(definition.id, false);
