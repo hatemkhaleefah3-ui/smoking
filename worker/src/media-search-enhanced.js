@@ -206,9 +206,11 @@ function buildFallbackQueries(query) {
     });
 
   const selected = ranked.slice(0, MAX_FALLBACK_QUERIES);
-  if (!selected.some((candidate) => !candidate.term.includes(' '))) {
-    const strongestSingle = ranked.find((candidate) => !candidate.term.includes(' '));
-    if (strongestSingle) selected[selected.length - 1] = strongestSingle;
+  const strongestSingle = ranked.find((candidate) => !candidate.term.includes(' '));
+  if (strongestSingle) {
+    const reordered = selected.filter((candidate) => candidate.term !== strongestSingle.term);
+    reordered.splice(Math.min(1, reordered.length), 0, strongestSingle);
+    return reordered.slice(0, MAX_FALLBACK_QUERIES).map((candidate) => candidate.term);
   }
   return selected.map((candidate) => candidate.term);
 }
