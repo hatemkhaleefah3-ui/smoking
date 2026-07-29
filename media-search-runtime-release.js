@@ -1,1 +1,1 @@
-window.__MEDIA_SEARCH_RUNTIME_RELEASE__ = 'v4.5-provider-image-delivery';
+window.__MEDIA_SEARCH_RUNTIME_RELEASE__ = 'v4.6-openverse-json-recovery';
