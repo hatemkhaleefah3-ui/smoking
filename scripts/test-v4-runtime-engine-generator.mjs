@@ -3,8 +3,10 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { generateV4RuntimeEngine } from './generate-v4-runtime-engine.mjs';
+import { patchV4ProviderFunnelDiagnostics } from './patch-v4-provider-funnel-diagnostics.mjs';
 
 const outputPath = await generateV4RuntimeEngine();
+await patchV4ProviderFunnelDiagnostics();
 const source = await readFile(outputPath, 'utf8');
 
 assert.match(source, /handleMultiSourceMediaSearchV4Runtime/);
@@ -19,11 +21,17 @@ assert.match(source, /response\.status === 429 \|\| response\.status >= 500/);
 assert.match(source, /await delay\(250 \* \(2 \*\* index\)\)/);
 assert.match(source, /Gemini models unavailable/);
 assert.match(source, /geminiModelsUsed: \[\.\.\.geminiModelsUsed\]/);
-assert.match(source, /quotaExhausted/);
-assert.match(source, /No fallback images were returned/);
+assert.match(source, /groundingFailure/);
+assert.match(source, /groundingUnavailable/);
+assert.match(source, /discoveryCompleted: true/);
+assert.match(source, /discoveredSourceCounts: countSources\(discovery\.candidates\)/);
+assert.match(source, /loadedSourceCounts: countSources\(loadedResult\.loaded\)/);
+assert.match(source, /providerDiagnostics,/);
+assert.match(source, /gemini-unavailable-before-visual-review/);
+assert.match(source, /Provider discovery completed, but no image was accepted without visual review/);
 assert.match(source, /responseText\.slice\(start, end \+ 1\)/);
 
 const syntax = spawnSync(process.execPath, ['--check', resolve(outputPath)], { encoding: 'utf8' });
 assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-console.log('Quota-resilient V4 engine generation validation passed.');
+console.log('Quota-resilient V4 provider funnel generation validation passed.');
