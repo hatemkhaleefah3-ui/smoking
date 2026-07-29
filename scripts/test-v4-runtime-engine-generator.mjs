@@ -4,10 +4,12 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { generateV4RuntimeEngine } from './generate-v4-runtime-engine.mjs';
 import { patchV4ProviderQueryFallbacks } from './patch-v4-provider-query-fallbacks.mjs';
+import { patchV4ProviderImageDelivery } from './patch-v4-provider-image-delivery.mjs';
 import { patchV4ProviderFunnelDiagnostics } from './patch-v4-provider-funnel-diagnostics.mjs';
 
 const outputPath = await generateV4RuntimeEngine();
 await patchV4ProviderQueryFallbacks();
+await patchV4ProviderImageDelivery();
 await patchV4ProviderFunnelDiagnostics();
 const source = await readFile(outputPath, 'utf8');
 
@@ -36,6 +38,15 @@ assert.match(source, /include: 'source\.contributors,source\.subjects,source\.ge
 assert.doesNotMatch(source, /include: 'source\.contributors,source\.subjects,source\.genres,source\.locations'/);
 assert.match(source, /target\[source\]\.queryAttempts \+= Number\(status\.queryAttempts\) \|\| 0/);
 
+assert.match(source, /LecturePublisherMediaSearchBot\/4\.5/);
+assert.match(source, /headers: imageRequestHeaders\(candidate, url\)/);
+assert.match(source, /'User-Agent': USER_AGENT/);
+assert.match(source, /'Api-User-Agent': USER_AGENT/);
+assert.match(source, /headers\.Referer = 'https:\/\/commons\.wikimedia\.org\/'/);
+assert.match(source, /headers\.Referer = 'https:\/\/wellcomecollection\.org\/'/);
+assert.match(source, /\/full\/512,\/0\/default\.jpg/);
+assert.doesNotMatch(source, /\/full\/!512,512\/0\/default\.jpg/);
+
 assert.match(source, /groundingFailure/);
 assert.match(source, /groundingUnavailable/);
 assert.match(source, /discoveryCompleted: true/);
@@ -49,4 +60,4 @@ assert.match(source, /responseText\.slice\(start, end \+ 1\)/);
 const syntax = spawnSync(process.execPath, ['--check', resolve(outputPath)], { encoding: 'utf8' });
 assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-console.log('V4 provider-query fallback and fail-closed diagnostic generation validation passed.');
+console.log('V4.5 provider-query, image-delivery, and fail-closed diagnostic generation validation passed.');
