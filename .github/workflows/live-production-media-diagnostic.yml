@@ -1,0 +1,78 @@
+name: Live production media diagnostic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live-media-search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Wait for exact commit on production
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          DEPLOYMENT_URL: https://smoking-e1j.pages.dev/api/diagnostics/9c593829f5c04b3e9ffb86724c4c3b75/deployment
+        run: |
+          node --input-type=module <<'NODE'
+          const expected = process.env.EXPECTED_SHA;
+          const url = process.env.DEPLOYMENT_URL;
+          let last = null;
+          for (let attempt = 1; attempt <= 40; attempt += 1) {
+            try {
+              const response = await fetch(`${url}?attempt=${attempt}`, { headers: { 'Cache-Control': 'no-cache' } });
+              last = await response.json();
+              console.log(`attempt=${attempt} status=${response.status} deployed=${last.deploymentCommitSha || 'missing'} expected=${expected}`);
+              if (response.ok && last.deploymentCommitSha === expected) process.exit(0);
+            } catch (error) {
+              console.log(`attempt=${attempt} error=${error.message}`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 15000));
+          }
+          console.error(JSON.stringify(last, null, 2));
+          process.exit(1);
+          NODE
+
+      - name: Run exact V4 test script against deployed Worker
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          LIVE_MEDIA_DIAGNOSTIC_URL: https://smoking-e1j.pages.dev/api/diagnostics/9c593829f5c04b3e9ffb86724c4c3b75/media-search
+        run: |
+          cat >> scripts/test-media-search-multisource-v4.mjs <<'NODE'
+
+          if (process.env.LIVE_MEDIA_DIAGNOSTIC_URL) {
+            const liveResponse = await fetch(`${process.env.LIVE_MEDIA_DIAGNOSTIC_URL}?ts=${Date.now()}`, {
+              headers: { 'Cache-Control': 'no-cache' }
+            });
+            const livePayload = await liveResponse.json();
+            const output = JSON.stringify(livePayload, null, 2);
+            console.log('--- LIVE DEPLOYED V4 OUTPUT START ---');
+            console.log(output);
+            console.log('--- LIVE DEPLOYED V4 OUTPUT END ---');
+            const { writeFile } = await import('node:fs/promises');
+            await writeFile('live-media-diagnostic-output.json', `${output}\n`, 'utf8');
+            assert.equal(liveResponse.status, 200);
+            assert.equal(livePayload.deployment?.deploymentCommitSha, process.env.EXPECTED_SHA);
+            assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4');
+            assert.equal(livePayload.routeTrace?.[0]?.returnedResponse, true);
+            assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4');
+            console.log('Live deployed strict source-balanced visual media search validation passed.');
+          }
+          NODE
+          node scripts/test-media-search-multisource-v4.mjs
+
+      - name: Upload live diagnostic JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-media-diagnostic-output
+          path: live-media-diagnostic-output.json
+          if-no-files-found: ignore
