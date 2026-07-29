@@ -4,10 +4,12 @@ import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { generateV4RuntimeEngine } from './generate-v4-runtime-engine.mjs';
 import { patchV4ProviderQueryFallbacks } from './patch-v4-provider-query-fallbacks.mjs';
+import { patchV4ProviderImageHeaders } from './patch-v4-provider-image-headers.mjs';
 import { patchV4ProviderFunnelDiagnostics } from './patch-v4-provider-funnel-diagnostics.mjs';
 
 const outputPath = await generateV4RuntimeEngine();
 await patchV4ProviderQueryFallbacks();
+await patchV4ProviderImageHeaders();
 await patchV4ProviderFunnelDiagnostics();
 const source = await readFile(outputPath, 'utf8');
 
@@ -36,6 +38,13 @@ assert.match(source, /include: 'source\.contributors,source\.subjects,source\.ge
 assert.doesNotMatch(source, /include: 'source\.contributors,source\.subjects,source\.genres,source\.locations'/);
 assert.match(source, /target\[source\]\.queryAttempts \+= Number\(status\.queryAttempts\) \|\| 0/);
 
+assert.match(source, /fetchWithTimeout\(url, \{ headers: imageRequestHeaders\(candidate, url\) \}\)/);
+assert.match(source, /function imageRequestHeaders\(candidate, value\)/);
+assert.match(source, /apiHeaders\('image\/avif,image\/webp,image\/apng,image\/svg\+xml,image\/\*,\*\/\*;q=0\.8'\)/);
+assert.match(source, /headers\.Referer = 'https:\/\/commons\.wikimedia\.org\/'/);
+assert.match(source, /headers\.Referer = 'https:\/\/wellcomecollection\.org\/'/);
+assert.doesNotMatch(source, /headers: \{ Accept: 'image\/\*' \}/);
+
 assert.match(source, /groundingFailure/);
 assert.match(source, /groundingUnavailable/);
 assert.match(source, /discoveryCompleted: true/);
@@ -49,4 +58,4 @@ assert.match(source, /responseText\.slice\(start, end \+ 1\)/);
 const syntax = spawnSync(process.execPath, ['--check', resolve(outputPath)], { encoding: 'utf8' });
 assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-console.log('V4 provider-query fallback and fail-closed diagnostic generation validation passed.');
+console.log('V4 provider-query, identified-image-fetch and fail-closed diagnostic generation validation passed.');
