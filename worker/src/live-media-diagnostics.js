@@ -22,7 +22,7 @@ const DIAGNOSTIC_PAYLOAD = {
   excludedUrls: []
 };
 
-export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSearch) {
+export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSearch, runtimeRelease) {
   if (request.method !== 'GET') return null;
 
   if (url.pathname === DEPLOYMENT_PATH) {
@@ -30,6 +30,7 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
       deploymentCommitSha: DEPLOYMENT_COMMIT_SHA,
       requiredFixCommitSha: FIX_COMMIT_SHA,
       metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT,
+      runtimeRelease,
       routeOrder: [
         'multi-source-v4-runtime',
         'multi-source-v4',
@@ -65,7 +66,8 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
     deployment: {
       deploymentCommitSha: DEPLOYMENT_COMMIT_SHA,
       requiredFixCommitSha: FIX_COMMIT_SHA,
-      metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT
+      metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT,
+      runtimeRelease
     },
     request: DIAGNOSTIC_PAYLOAD,
     routeTrace,
