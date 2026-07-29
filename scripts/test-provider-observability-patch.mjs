@@ -20,7 +20,9 @@ try {
   assert.match(source, /formatProviderSummary/);
   assert.match(source, /result\.providerDiagnostics/);
   assert.match(source, /result\.sourceCounts/);
-  assert.match(source, /found, \$\{loaded\} loaded/);
+  assert.match(source, /rawFound/);
+  assert.match(source, /eligibleFound/);
+  assert.match(source, /reviewed/);
   assert.match(source, /status\.title = cardState\.providerDetails/);
 
   const syntax = spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' });
