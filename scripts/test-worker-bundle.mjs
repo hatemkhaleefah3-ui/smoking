@@ -9,6 +9,10 @@ const pdfWasm = await stat(new URL('../dist/vendor/mupdf-wasm.wasm', import.meta
 
 assert.match(bundle, /\/api\/search/);
 assert.match(bundle, /GEMINI_API_KEY/);
+assert.match(bundle, /api\.openverse\.org\/v1\/images/);
+assert.match(bundle, /api\.wellcomecollection\.org\/catalogue\/v2\/images/);
+assert.match(bundle, /CC BY-NC-SA/);
+assert.match(bundle, /imageResults/);
 assert.match(bundle, /\/api\/images/);
 assert.match(bundle, /image_upload_rate_limits/);
 assert.match(bundle, /max-age=31536000, immutable/);
@@ -26,4 +30,4 @@ assert.match(pdfAutofill, /pdf-extractor-runtime\.js/);
 assert.match(pdfAutofillCss, /pdf-autofill-card/);
 assert.ok(pdfWasm.size > 1_000_000, 'MuPDF WASM asset should be present as a static file.');
 
-console.log('Advanced Mode Worker, PDF runtime and imoo auto-fill validation passed.');
+console.log('Advanced Mode Worker, multi-source media, PDF runtime and imoo auto-fill validation passed.');

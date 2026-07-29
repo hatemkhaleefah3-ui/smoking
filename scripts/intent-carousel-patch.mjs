@@ -40,9 +40,52 @@ export async function patchIntentCarousel(distDirectory) {
       "    const usefulText = Number.isInteger(cardState.usefulCount) && cardState.usefulCount > 0",
       "      ? `${cardState.usefulCount} useful · `",
       "      : '';",
-      "    status.textContent = cardState.searching ? 'Gemini is understanding and searching…' : cardState.error || `${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;"
+      "    status.textContent = cardState.searching ? 'Gemini is searching open media…' : cardState.error || `${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;"
     ].join('\n'),
     'carousel status');
+
+  source = replaceRequired(source,
+    `        button.title = candidate.label;`,
+    `        button.title = [candidate.label, candidate.creator, candidate.license, candidate.attribution].filter(Boolean).join(' · ');`,
+    'candidate metadata title');
+
+  source = replaceRequired(source, `    controls.append(
+      actionButton('Save', () => saveSelected(definition.id)),
+      actionButton('Delete', () => deleteSelected(definition.id, slotIndex)),
+      addButton(definition.id, slotIndex)
+    );
+    shell.append(header, viewport, controls);`, `    controls.append(
+      actionButton('Save', () => saveSelected(definition.id)),
+      actionButton('Delete', () => deleteSelected(definition.id, slotIndex)),
+      addButton(definition.id, slotIndex)
+    );
+    const selected = cardState.candidates.find((candidate) => candidate.key === cardState.selectedKey);
+    const credit = document.createElement('div');
+    credit.className = 'image-candidate-credit';
+    if (selected) {
+      const summary = document.createElement('span');
+      summary.textContent = selected.attribution || [selected.label, selected.creator, selected.license].filter(Boolean).join(' — ');
+      credit.append(summary);
+      if (selected.sourcePage) {
+        const sourceLink = document.createElement('a');
+        sourceLink.href = selected.sourcePage;
+        sourceLink.target = '_blank';
+        sourceLink.rel = 'noopener noreferrer';
+        sourceLink.textContent = 'Original source';
+        credit.append(sourceLink);
+      }
+      if (selected.licenseUrl) {
+        const licenseLink = document.createElement('a');
+        licenseLink.href = selected.licenseUrl;
+        licenseLink.target = '_blank';
+        licenseLink.rel = 'noopener noreferrer';
+        licenseLink.textContent = selected.license || 'License';
+        credit.append(licenseLink);
+      }
+    } else {
+      credit.textContent = 'Select an image to view its source, license, and attribution.';
+    }
+    shell.append(header, viewport, credit, controls);`, 'visible attribution');
 
   source = replaceRequired(source,
     `      if (startSearch && !cardState.searched && !cardState.searching) searchDefinition(definition);`,
@@ -98,14 +141,44 @@ export async function patchIntentCarousel(distDirectory) {
         })
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Wikimedia search could not finish.');
+      if (!response.ok) throw new Error(result.error || 'Media search could not finish.');
       cardState.usefulCount = Number.isInteger(result.usefulCount) ? result.usefulCount : 0;
       const candidateLabel = result.intentSummary || definition.label || definition.altTexts[0] || definition.id;
-      for (const url of result.images || []) {
-        if (typeof url !== 'string' || seen.has(url)) continue;
+      const mediaItems = Array.isArray(result.imageResults) && result.imageResults.length
+        ? result.imageResults
+        : (result.images || []).map((url) => ({ url, source: 'Wikimedia Commons', title: candidateLabel }));
+      for (const item of mediaItems) {
+        const url = typeof item?.url === 'string' ? item.url : '';
+        if (!url || seen.has(url)) continue;
         seen.add(url);
-        cardState.candidates.push({ key: \`wikimedia:\${url}\`, source: 'Wikimedia', label: candidateLabel, previewUrl: url, remoteUrl: url, file: null, revoke: false });
-      }`, 'single intent request');
+        const sourceName = typeof item?.source === 'string' && item.source ? item.source : 'Wikimedia Commons';
+        const sourceKey = sourceName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        cardState.candidates.push({
+          key: \`\${sourceKey}:\${url}\`,
+          source: sourceName,
+          label: item.title || candidateLabel,
+          previewUrl: url,
+          remoteUrl: url,
+          originalUrl: item.originalUrl || url,
+          creator: item.creator || '',
+          creatorUrl: item.creatorUrl || '',
+          license: item.license || '',
+          licenseUrl: item.licenseUrl || '',
+          attribution: item.attribution || '',
+          sourcePage: item.sourcePage || '',
+          resemblanceScore: Number(item.resemblanceScore) || 0,
+          file: null,
+          revoke: false
+        });
+      }`, 'single multi-source intent request');
+
+  source = source
+    .replaceAll('Finding reusable Wikimedia images…', 'Finding reusable images across open collections…')
+    .replaceAll('PDF, Wikimedia, or added images will appear here.', 'PDF, open-collection, or added images will appear here.')
+    .replaceAll('No Wikimedia images found.', 'No reusable matching images found.')
+    .replaceAll('Wikimedia search could not finish.', 'Media search could not finish.')
+    .replaceAll('Importing Wikimedia image for', 'Importing selected media for')
+    .replaceAll('Wikimedia image returned', 'Selected media returned');
 
   await writeFile(path, source);
 }
