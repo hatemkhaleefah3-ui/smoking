@@ -68,19 +68,19 @@ export async function handleRelevantIntentMediaSearch(request, env) {
     }
 
     const fallbackUrls = [];
-    const seen = new Set(discoveredUrls);
+    const seen = new Set();
     for (const query of strictLabelQueries) {
       const response = await handleEnhancedMediaSearch(buildSearchRequest(request, query), env);
       if (response.status !== 200) continue;
       const payload = await response.json().catch(() => ({ images: [] }));
       for (const url of uniqueHttpsUrls(payload.images)) {
-        if (seen.has(url) || seen.size >= MAX_CANDIDATES) continue;
+        if (seen.has(url) || fallbackUrls.length >= MAX_CANDIDATES) continue;
         seen.add(url);
         fallbackUrls.push(url);
       }
     }
 
-    candidates = await enrichCandidates([...discoveredUrls, ...fallbackUrls]);
+    candidates = await enrichCandidates(fallbackUrls);
     ranked = await rankAndFilter({ candidates, label, imageId, altTexts, intentSummary, env, geminiAvailable });
     geminiAvailable = ranked.geminiAvailable;
   }
@@ -239,22 +239,26 @@ function deterministicLabelQueries(label, imageId, altTexts) {
 }
 
 async function enrichCandidates(urls) {
-  const base = urls.slice(0, MAX_CANDIDATES).map((url, sourceOrder) => ({
-    url,
-    title: titleFromUploadUrl(url),
-    description: '',
-    categories: '',
-    sourceOrder
-  }));
-  const titleMap = new Map(base.filter((item) => item.title).map((item) => [normalize(item.title), item]));
-  const titled = base.filter((item) => item.title);
+  const base = urls.slice(0, MAX_CANDIDATES).map((url, sourceOrder) => {
+    const commonsTitle = titleFromUploadUrl(url);
+    return {
+      url,
+      commonsTitle,
+      title: sanitizeTitle(commonsTitle),
+      description: '',
+      categories: '',
+      sourceOrder
+    };
+  });
+  const titleMap = new Map(base.filter((item) => item.commonsTitle).map((item) => [normalize(item.commonsTitle), item]));
+  const titled = base.filter((item) => item.commonsTitle);
 
   for (let offset = 0; offset < titled.length; offset += METADATA_BATCH_SIZE) {
     const batch = titled.slice(offset, offset + METADATA_BATCH_SIZE);
     try {
-      const metadata = await fetchCommonsMetadata(batch.map((item) => item.title));
+      const metadata = await fetchCommonsMetadata(batch.map((item) => item.commonsTitle));
       for (const item of metadata) {
-        const target = titleMap.get(normalize(item.title));
+        const target = titleMap.get(normalize(item.commonsTitle));
         if (!target) continue;
         target.description = item.description;
         target.categories = item.categories;
@@ -288,8 +292,10 @@ async function fetchCommonsMetadata(titles) {
   const output = [];
   for (const page of Object.values(payload?.query?.pages || {})) {
     const metadata = page?.imageinfo?.[0]?.extmetadata || {};
+    const commonsTitle = String(page?.title || '').replace(/^File:/i, '').trim();
     output.push({
-      title: sanitizeTitle(page?.title),
+      commonsTitle,
+      title: sanitizeTitle(commonsTitle),
       description: stripMarkup(metadata.ImageDescription?.value || metadata.ObjectName?.value || '').slice(0, 500),
       categories: stripMarkup(metadata.Categories?.value || '').replace(/\|/g, ', ').slice(0, 350)
     });
@@ -353,7 +359,7 @@ function titleFromUploadUrl(value) {
     const segments = url.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part));
     const thumbIndex = segments.indexOf('thumb');
     const raw = thumbIndex >= 0 && segments.length >= 2 ? segments[segments.length - 2] : segments[segments.length - 1];
-    return sanitizeTitle(raw || '');
+    return String(raw || '').trim();
   } catch {
     return '';
   }
