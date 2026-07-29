@@ -11,6 +11,8 @@ import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisourc
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
+export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.2-quota-failover';
+
 const MEDIA_SEARCH_HANDLERS = [
   ['multi-source-v4-runtime', handleMultiSourceMediaSearchV4Runtime],
   ['multi-source-v4', handleMultiSourceMediaSearchV4],
@@ -28,6 +30,7 @@ export async function routeMediaSearch(request, env, trace = []) {
     try {
       const response = await handler(request, env);
       trace.push({
+        release: MEDIA_SEARCH_RUNTIME_RELEASE,
         handler: name,
         returnedResponse: Boolean(response),
         status: response?.status ?? null,
@@ -36,6 +39,7 @@ export async function routeMediaSearch(request, env, trace = []) {
       if (response) return response;
     } catch (error) {
       trace.push({
+        release: MEDIA_SEARCH_RUNTIME_RELEASE,
         handler: name,
         returnedResponse: false,
         status: null,
@@ -51,7 +55,13 @@ export async function routeMediaSearch(request, env, trace = []) {
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
-    const diagnosticResponse = await handleLiveMediaDiagnostics(request, env, url, routeMediaSearch);
+    const diagnosticResponse = await handleLiveMediaDiagnostics(
+      request,
+      env,
+      url,
+      routeMediaSearch,
+      MEDIA_SEARCH_RUNTIME_RELEASE
+    );
     if (diagnosticResponse) return diagnosticResponse;
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
       return routeMediaSearch(request, env);
