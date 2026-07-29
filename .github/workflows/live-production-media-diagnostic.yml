@@ -101,6 +101,8 @@ jobs:
               assert.ok(Array.isArray(diagnostics.lastQueries) && diagnostics.lastQueries.length >= 1, `${source} query trace is missing`);
               assert.ok(diagnostics.rawFound > 0, `${source} returned no raw candidates after fallbacks`);
               assert.ok(diagnostics.eligibleFound > 0, `${source} returned no eligible candidates after fallbacks`);
+              assert.ok(diagnostics.loadAttempts >= 1, `${source} never attempted a review-image download`);
+              assert.ok(diagnostics.loaded >= 1, `${source} did not load a review image`);
               assert.equal(diagnostics.searchErrors, 0, `${source} search failed: ${diagnostics.lastSearchError}`);
             }
 
