@@ -3,3 +3,4 @@ dist/
 .wrangler/
 .dev.vars
 *.log
+worker/src/media-search-multisource-v3.generated.js

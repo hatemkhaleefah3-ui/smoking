@@ -5,7 +5,9 @@ import { build } from 'esbuild';
 import { writeIntegratedAssets } from './integrated-assets.mjs';
 import { patchIntentCarousel } from './intent-carousel-patch.mjs';
 import { patchProviderObservability } from './provider-observability-patch.mjs';
+import { patchRefreshMediaResults } from './refresh-media-results-patch.mjs';
 import { versionMediaSearchAssets } from './version-media-search-assets.mjs';
+import { generateDiverseMediaEngine } from './generate-diverse-media-engine.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -17,6 +19,7 @@ const files = [
   'lecture.html', 'lecture.js', 'admin.html', 'admin.css', 'admin.js', '404.html'
 ];
 
+await generateDiverseMediaEngine();
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await mkdir(resolve(dist, 'vendor'), { recursive: true });
@@ -26,6 +29,7 @@ await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true
 await writeIntegratedAssets(root, dist);
 await patchIntentCarousel(dist);
 await patchProviderObservability(dist);
+await patchRefreshMediaResults(dist);
 await versionMediaSearchAssets(dist);
 await cp(
   resolve(root, 'node_modules/mupdf/dist/mupdf-wasm.wasm'),
