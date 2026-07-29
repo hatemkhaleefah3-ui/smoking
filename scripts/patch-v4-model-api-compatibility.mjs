@@ -38,14 +38,8 @@ export async function patchV4ModelApiCompatibility() {
     const endpoint = \`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(model)}:generateContent\`;
     const generationConfig = { maxOutputTokens };
     if (!googleSearch) {
-      if (/^gemini-3\\.6(?:-|$)/i.test(model)) {
-        generationConfig.responseFormat = {
-          text: { mimeType: 'application/json', schema }
-        };
-      } else {
-        generationConfig.responseMimeType = 'application/json';
-        generationConfig.responseSchema = schema;
-      }
+      generationConfig.responseMimeType = 'application/json';
+      generationConfig.responseSchema = schema;
     }
     const body = {
       contents: [{ role: 'user', parts: requestParts }],
@@ -111,5 +105,5 @@ export async function patchV4ModelApiCompatibility() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await patchV4ModelApiCompatibility();
-  console.log('Patched V4 with model-compatible Gemini request formats.');
+  console.log('Patched V4 with legacy generateContent structured-output fields.');
 }
