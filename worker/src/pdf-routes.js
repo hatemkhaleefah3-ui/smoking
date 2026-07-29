@@ -13,9 +13,9 @@ export async function handlePdfExtractionRequest(request, env, url = new URL(req
 
     if (isCreate) {
       assertSameOrigin(request, url);
-      return createPdfExtraction(request, extractionEnv, url, { HttpError, json });
+      return await createPdfExtraction(request, extractionEnv, url, { HttpError, json });
     }
-    return downloadPdfExtraction(downloadMatch[1], extractionEnv, { HttpError });
+    return await downloadPdfExtraction(downloadMatch[1], extractionEnv, { HttpError });
   } catch (error) {
     console.error(JSON.stringify({
       event: 'pdf_extraction_request_error',

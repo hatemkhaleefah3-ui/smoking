@@ -196,16 +196,23 @@ function buildFallbackQueries(query) {
   );
 
   const seen = new Set();
-  return candidates
+  const ranked = candidates
     .sort((left, right) => right.score - left.score || left.term.length - right.term.length)
-    .map((candidate) => candidate.term)
-    .filter((term) => {
-      const normalized = normalizeTerm(term);
+    .filter((candidate) => {
+      const normalized = normalizeTerm(candidate.term);
       if (!normalized || seen.has(normalized)) return false;
       seen.add(normalized);
       return true;
-    })
-    .slice(0, MAX_FALLBACK_QUERIES);
+    });
+
+  const selected = ranked.slice(0, MAX_FALLBACK_QUERIES);
+  const strongestSingle = ranked.find((candidate) => !candidate.term.includes(' '));
+  if (strongestSingle) {
+    const reordered = selected.filter((candidate) => candidate.term !== strongestSingle.term);
+    reordered.splice(Math.min(1, reordered.length), 0, strongestSingle);
+    return reordered.slice(0, MAX_FALLBACK_QUERIES).map((candidate) => candidate.term);
+  }
+  return selected.map((candidate) => candidate.term);
 }
 
 function tokenize(value) {

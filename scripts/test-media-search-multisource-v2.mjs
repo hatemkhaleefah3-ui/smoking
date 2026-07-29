@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker from '../worker/src/pages.js';
+import { handleMultiSourceMediaSearchV2 } from '../worker/src/media-search-multisource-v2.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -91,7 +91,7 @@ try {
     throw new Error(`Unexpected fetch URL: ${value}`);
   };
 
-  const response = await worker.fetch(new Request('https://example.com/api/search', {
+  const response = await handleMultiSourceMediaSearchV2(new Request('https://example.com/api/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
     body: JSON.stringify({
