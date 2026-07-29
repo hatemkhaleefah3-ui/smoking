@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import worker from '../worker/src/pages.js';
+import { handleVisualCycleMediaSearch } from '../worker/src/media-search-visual-cycles.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -88,7 +88,7 @@ try {
     throw new Error(`Unexpected fetch URL: ${value}`);
   };
 
-  const response = await worker.fetch(new Request('https://example.com/api/search', {
+  const response = await handleVisualCycleMediaSearch(new Request('https://example.com/api/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },
     body: JSON.stringify({
