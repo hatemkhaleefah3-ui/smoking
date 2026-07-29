@@ -7,10 +7,12 @@ import { handleMultiSourceMediaSearch } from './media-search-multisource.js';
 import { handleMultiSourceMediaSearchV2 } from './media-search-multisource-v2.js';
 import { handleMultiSourceMediaSearchV3 } from './media-search-multisource-v3.generated.js';
 import { handleMultiSourceMediaSearchV4 } from './media-search-multisource-v4.js';
+import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisource-v4-runtime.generated.js';
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
 const MEDIA_SEARCH_HANDLERS = [
+  ['multi-source-v4-runtime', handleMultiSourceMediaSearchV4Runtime],
   ['multi-source-v4', handleMultiSourceMediaSearchV4],
   ['multi-source-v3', handleMultiSourceMediaSearchV3],
   ['multi-source-v2', handleMultiSourceMediaSearchV2],
