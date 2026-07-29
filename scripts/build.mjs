@@ -8,6 +8,7 @@ import { patchProviderObservability } from './provider-observability-patch.mjs';
 import { patchRefreshMediaResults } from './refresh-media-results-patch.mjs';
 import { versionMediaSearchAssets } from './version-media-search-assets.mjs';
 import { generateDiverseMediaEngine } from './generate-diverse-media-engine.mjs';
+import './generate-deployment-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
