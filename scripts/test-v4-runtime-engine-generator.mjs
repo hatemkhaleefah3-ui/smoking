@@ -15,6 +15,8 @@ assert.match(source, /Do not include Markdown fences or explanatory text/);
 assert.match(source, /responseFormat: \{ text: \{ mimeType: 'application\/json', schema \} \}/);
 assert.match(source, /const detail = await response\.text\(\)\.catch/);
 assert.match(source, /responseText\.slice\(start, end \+ 1\)/);
+assert.match(source, /input\?\.diagnosticMode === true/);
+assert.match(source, /diagnosticFailure: true/);
 
 const syntax = spawnSync(process.execPath, ['--check', resolve(outputPath)], { encoding: 'utf8' });
 assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
