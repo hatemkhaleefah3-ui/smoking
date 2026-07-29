@@ -72,7 +72,19 @@ for (const marker of [
 ]) {
   if (!integratedHtml.includes(marker)) throw new Error(`Integrated Pathways did not render ${marker}.`);
 }
-if (!integratedHtml.includes(integrated.document.title)) throw new Error('Integrated Pathways did not render its example title.');
+const escapedIntegratedTitle = escapeHtmlForAssertion(integrated.document.title);
+if (!integratedHtml.includes(escapedIntegratedTitle)) {
+  throw new Error(`Integrated Pathways did not render its escaped example title: ${JSON.stringify(integrated.document.title)}.`);
+}
 if (/{{[A-Z0-9_]+}}/.test(integratedHtml)) throw new Error('Integrated Pathways has unresolved template tokens.');
 
 console.log('Renderer validation passed for all five designs, Clinical schema v2.0, and exact Integrated Pathways ZIP assets.');
+
+function escapeHtmlForAssertion(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
