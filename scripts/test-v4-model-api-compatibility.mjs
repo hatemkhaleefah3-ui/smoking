@@ -13,7 +13,7 @@ const source = await readFile(outputPath, 'utf8');
 
 assert.match(source, /gemini-2\.5-flash-lite/);
 assert.match(source, /gemini-2\.5-flash/);
-assert.match(source, /generationConfig\.responseFormat/);
+assert.doesNotMatch(source, /generationConfig\.responseFormat/);
 assert.match(source, /generationConfig\.responseMimeType = 'application\/json'/);
 assert.match(source, /generationConfig\.responseSchema = schema/);
 assert.match(source, /formatRejected/);
@@ -24,4 +24,4 @@ assert.match(source, /groundingFallback: true/);
 const syntax = spawnSync(process.execPath, ['--check', resolve(outputPath)], { encoding: 'utf8' });
 assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-console.log('V4 model-compatible Gemini API validation passed.');
+console.log('V4 legacy generateContent structured-output validation passed.');
