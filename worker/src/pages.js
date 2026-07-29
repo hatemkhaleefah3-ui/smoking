@@ -11,7 +11,7 @@ import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisourc
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
-export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.4-provider-query-fallbacks';
+export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.5-provider-image-headers';
 
 const MEDIA_SEARCH_HANDLERS = [
   ['multi-source-v4-runtime', handleMultiSourceMediaSearchV4Runtime],
