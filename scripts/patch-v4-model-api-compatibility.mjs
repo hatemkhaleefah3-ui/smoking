@@ -31,6 +31,9 @@ export async function patchV4ModelApiCompatibility() {
         ].join('\\n')
       }, ...parts.slice(1)]
     : parts;
+  const legacySchema = JSON.parse(JSON.stringify(schema, (key, value) => (
+    key === 'additionalProperties' ? undefined : value
+  )));
   const failures = [];
 
   for (let index = 0; index < modelCandidates.length; index += 1) {
@@ -39,7 +42,7 @@ export async function patchV4ModelApiCompatibility() {
     const generationConfig = { maxOutputTokens };
     if (!googleSearch) {
       generationConfig.responseMimeType = 'application/json';
-      generationConfig.responseSchema = schema;
+      generationConfig.responseSchema = legacySchema;
     }
     const body = {
       contents: [{ role: 'user', parts: requestParts }],
@@ -56,7 +59,7 @@ export async function patchV4ModelApiCompatibility() {
       const detail = await response.text().catch(() => '');
       failures.push(\`\${model}: HTTP \${response.status}\${detail ? \` \${detail.slice(0, 520)}\` : ''}\`);
       const formatRejected = response.status === 400
-        && /response.?format|response.?mime|response.?schema|mime.?type/i.test(detail);
+        && /response.?format|response.?mime|response.?schema|mime.?type|additionalProperties/i.test(detail);
       const retryable = response.status === 429 || response.status >= 500 || formatRejected;
       if (!retryable) break;
       if (index < modelCandidates.length - 1) await delay(250 * (2 ** Math.min(index, 3)));
@@ -105,5 +108,5 @@ export async function patchV4ModelApiCompatibility() {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await patchV4ModelApiCompatibility();
-  console.log('Patched V4 with legacy generateContent structured-output fields.');
+  console.log('Patched V4 with sanitized legacy generateContent schema fields.');
 }
