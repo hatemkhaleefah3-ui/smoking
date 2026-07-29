@@ -33,7 +33,7 @@ jobs:
               console.log(`attempt=${attempt} status=${response.status} deployed=${last.deploymentCommitSha || 'missing'} release=${last.runtimeRelease || 'missing'} expected=${expected}`);
               if (response.ok
                 && last.deploymentCommitSha === expected
-                && last.runtimeRelease === 'v4.4-provider-query-fallbacks') process.exit(0);
+                && last.runtimeRelease === 'v4.5-provider-image-delivery') process.exit(0);
             } catch (error) {
               console.log(`attempt=${attempt} error=${error.message}`);
             }
@@ -62,7 +62,7 @@ jobs:
               const deployed = livePayload.deployment?.deploymentCommitSha || 'missing';
               const release = livePayload.deployment?.runtimeRelease || livePayload.routeTrace?.[0]?.release || 'missing';
               console.log(`media-attempt=${attempt} status=${liveResponse.status} deployed=${deployed} release=${release}`);
-              if (liveResponse.ok && deployed === expected && release === 'v4.4-provider-query-fallbacks') break;
+              if (liveResponse.ok && deployed === expected && release === 'v4.5-provider-image-delivery') break;
               await new Promise((resolve) => setTimeout(resolve, 10000));
             }
 
@@ -75,8 +75,8 @@ jobs:
 
             assert.equal(liveResponse.status, 200);
             assert.equal(livePayload.deployment?.deploymentCommitSha, expected);
-            assert.equal(livePayload.deployment?.runtimeRelease, 'v4.4-provider-query-fallbacks');
-            assert.equal(livePayload.routeTrace?.[0]?.release, 'v4.4-provider-query-fallbacks');
+            assert.equal(livePayload.deployment?.runtimeRelease, 'v4.5-provider-image-delivery');
+            assert.equal(livePayload.routeTrace?.[0]?.release, 'v4.5-provider-image-delivery');
             assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4-runtime');
             assert.equal(livePayload.routeTrace?.[0]?.returnedResponse, true);
             assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4-runtime');
@@ -104,9 +104,10 @@ jobs:
               assert.ok(diagnostics.loadAttempts >= 1, `${source} never attempted a review-image download`);
               assert.ok(diagnostics.loaded >= 1, `${source} did not load a review image`);
               assert.equal(diagnostics.searchErrors, 0, `${source} search failed: ${diagnostics.lastSearchError}`);
+              assert.equal(diagnostics.imageErrors, 0, `${source} image delivery failed: ${diagnostics.lastImageError}`);
             }
 
-            console.log('Live deployed V4.4 provider-query fallback validation passed.');
+            console.log('Live deployed V4.5 provider image-delivery validation passed.');
           }
           NODE
           node scripts/test-media-search-multisource-v4.mjs
