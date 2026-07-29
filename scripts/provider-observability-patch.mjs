@@ -25,8 +25,8 @@ export async function patchProviderObservability(distDirectory) {
     "      const candidateLabel = result.intentSummary || definition.label || definition.altTexts[0] || definition.id;"
   ].join('\n'), [
     "      cardState.usefulCount = Number.isInteger(result.usefulCount) ? result.usefulCount : 0;",
-    "      cardState.engineLabel = result.engine === 'multi-source-v3'",
-    "        ? 'Multi-source v3'",
+    "      cardState.engineLabel = result.engine === 'multi-source-v2'",
+    "        ? 'Multi-source v2'",
     "        : result.multiSource === true ? 'Multi-source legacy' : 'Wikimedia-only fallback';",
     "      const providerInfo = formatProviderSummary(result.sourceCounts, result.providerDiagnostics);",
     "      cardState.sourceSummary = providerInfo.summary;",
