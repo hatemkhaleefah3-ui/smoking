@@ -4,12 +4,15 @@ import { handleEnhancedMediaSearch } from './media-search-enhanced.js';
 import { handleRelevantIntentMediaSearch } from './media-search-relevance.js';
 import { handleVisualCycleMediaSearch } from './media-search-visual-cycles.js';
 import { handleMultiSourceMediaSearch } from './media-search-multisource.js';
+import { handleMultiSourceMediaSearchV2 } from './media-search-multisource-v2.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
+      const correctedMultiSourceResponse = await handleMultiSourceMediaSearchV2(request, env);
+      if (correctedMultiSourceResponse) return correctedMultiSourceResponse;
       const multiSourceResponse = await handleMultiSourceMediaSearch(request, env);
       if (multiSourceResponse) return multiSourceResponse;
       const visualCycleResponse = await handleVisualCycleMediaSearch(request, env);
