@@ -22,6 +22,7 @@ try {
   assert.match(source, /searchRun: cardState\.searchRun/);
   assert.match(source, /excludedUrls: cardState\.excludedUrls\.slice\(-120\)/);
   assert.match(source, /cardState\.candidates = cardState\.candidates\.filter\(\(candidate\) => !candidate\.remoteUrl\)/);
+  assert.match(source, /Multi-source v4/);
   assert.match(source, /Multi-source v3/);
   assert.match(source, /enqueueSearch\(definition\)/);
 
