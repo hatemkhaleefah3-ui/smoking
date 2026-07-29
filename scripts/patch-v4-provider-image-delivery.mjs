@@ -17,8 +17,8 @@ export async function patchV4ProviderImageDelivery() {
 
   source = replaceRequired(
     source,
-    `    return url.replace(/\/info\.json(?:\?.*)?$/i, '/full/!512,512/0/default.jpg');`,
-    `    return url.replace(/\/info\.json(?:\?.*)?$/i, '/full/512,/0/default.jpg');`,
+    `'/full/!512,512/0/default.jpg'`,
+    `'/full/512,/0/default.jpg'`,
     'Wellcome IIIF width-preserving image URL'
   );
 
