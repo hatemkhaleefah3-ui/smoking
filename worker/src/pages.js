@@ -11,7 +11,7 @@ import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisourc
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
-export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.5-provider-image-delivery';
+export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.6-openverse-json-recovery';
 
 const MEDIA_SEARCH_HANDLERS = [
   ['multi-source-v4-runtime', handleMultiSourceMediaSearchV4Runtime],
