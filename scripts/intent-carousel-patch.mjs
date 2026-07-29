@@ -91,6 +91,7 @@ export async function patchIntentCarousel(distDirectory) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           intentSearch: true,
+          strictRelevance: true,
           imageId: definition.id,
           label: definition.label,
           altTexts: definition.altTexts
