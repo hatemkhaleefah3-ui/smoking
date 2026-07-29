@@ -5,6 +5,7 @@ import { build } from 'esbuild';
 import { writeIntegratedAssets } from './integrated-assets.mjs';
 import { patchIntentCarousel } from './intent-carousel-patch.mjs';
 import { patchProviderObservability } from './provider-observability-patch.mjs';
+import { versionMediaSearchAssets } from './version-media-search-assets.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
@@ -25,6 +26,7 @@ await cp(resolve(root, 'examples'), resolve(dist, 'examples'), { recursive: true
 await writeIntegratedAssets(root, dist);
 await patchIntentCarousel(dist);
 await patchProviderObservability(dist);
+await versionMediaSearchAssets(dist);
 await cp(
   resolve(root, 'node_modules/mupdf/dist/mupdf-wasm.wasm'),
   resolve(dist, 'vendor/mupdf-wasm.wasm')
