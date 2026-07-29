@@ -10,15 +10,15 @@ export async function patchV4ProviderImageDelivery() {
 
   source = replaceRequired(
     source,
-    `const USER_AGENT = 'LecturePublisherMultiSourceSearch/4.0 (https://github.com/hatemkhaleefah3-ui/smoking)';`,
+    `const USER_AGENT = 'LecturePublisherMultiSourceSearch/4.2 (https://github.com/hatemkhaleefah3-ui/smoking)';`,
     `const USER_AGENT = 'LecturePublisherMediaSearchBot/4.5 (https://github.com/hatemkhaleefah3-ui/smoking; contact via repository issues)';`,
     'descriptive provider user-agent'
   );
 
   source = replaceRequired(
     source,
-    `    return url.replace(/\\/info\\.json(?:\\?.*)?$/i, '/full/!512,512/0/default.jpg');`,
-    `    return url.replace(/\\/info\\.json(?:\\?.*)?$/i, '/full/512,/0/default.jpg');`,
+    `    return url.replace(/\/info\.json(?:\?.*)?$/i, '/full/!512,512/0/default.jpg');`,
+    `    return url.replace(/\/info\.json(?:\?.*)?$/i, '/full/512,/0/default.jpg');`,
     'Wellcome IIIF width-preserving image URL'
   );
 
