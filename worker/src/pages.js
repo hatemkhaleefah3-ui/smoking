@@ -2,12 +2,15 @@ import lecturePublisher from './index.js';
 import { handleImageAssetRequest } from './image-assets.js';
 import { handleEnhancedMediaSearch } from './media-search-enhanced.js';
 import { handleRelevantIntentMediaSearch } from './media-search-relevance.js';
+import { handleVisualCycleMediaSearch } from './media-search-visual-cycles.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 
 export default {
   async fetch(request, env, context) {
     const url = new URL(request.url);
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
+      const visualCycleResponse = await handleVisualCycleMediaSearch(request, env);
+      if (visualCycleResponse) return visualCycleResponse;
       const intentResponse = await handleRelevantIntentMediaSearch(request, env);
       if (intentResponse) return intentResponse;
       return handleEnhancedMediaSearch(request, env);
