@@ -9,14 +9,14 @@ export async function patchProviderObservability(distDirectory) {
     "    const usefulText = Number.isInteger(cardState.usefulCount) && cardState.usefulCount > 0",
     "      ? `${cardState.usefulCount} useful · `",
     "      : '';",
-    "    status.textContent = cardState.searching ? 'Gemini is understanding and searching…' : cardState.error || `${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;"
+    "    status.textContent = cardState.searching ? 'Gemini is searching open media…' : cardState.error || `${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}`;"
   ].join('\n'), [
     "    const usefulText = Number.isInteger(cardState.usefulCount) && cardState.usefulCount > 0",
     "      ? `${cardState.usefulCount} useful · `",
     "      : '';",
     "    const engineText = cardState.engineLabel ? `${cardState.engineLabel} · ` : '';",
     "    const sourceText = cardState.sourceSummary ? ` · ${cardState.sourceSummary}` : '';",
-    "    status.textContent = cardState.searching ? 'Gemini is understanding and searching…' : cardState.error || `${engineText}${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}${sourceText}`;",
+    "    status.textContent = cardState.searching ? 'Gemini is searching open media…' : cardState.error || `${engineText}${usefulText}${cardState.candidates.length} choice${cardState.candidates.length === 1 ? '' : 's'}${sourceText}`;",
     "    status.title = cardState.providerDetails || '';"
   ].join('\n'), 'provider-aware status');
 
