@@ -41,15 +41,16 @@ assert.doesNotMatch(source, /include: 'source\.contributors,source\.subjects,sou
 assert.match(source, /target\[source\]\.queryAttempts \+= Number\(status\.queryAttempts\) \|\| 0/);
 
 assert.match(source, /const OPENVERSE_RESPONSE_ATTEMPTS = 3/);
+assert.match(source, /async function searchOpenverse\(query, page, env = \{\}\)/);
 assert.match(source, /format: 'json'/);
-assert.match(source, /fetchOpenverseJson/);
+assert.match(source, /const payload = await fetchOpenverseJson/);
+assert.match(source, /async function fetchOpenverseJson/);
 assert.match(source, /content-type/);
 assert.match(source, /htmlResponse/);
 assert.match(source, /Openverse response failure after/);
 assert.match(source, /OPENVERSE_ACCESS_TOKEN/);
 assert.match(source, /x-ratelimit-available-anon-burst/);
 assert.match(source, /cf-ray/);
-assert.doesNotMatch(source, /const payload = await response\.json\(\);\n  const results = Array\.isArray\(payload\?\.results\)/);
 
 assert.match(source, /LecturePublisherMediaSearchBot\/4\.5/);
 assert.match(source, /headers: imageRequestHeaders\(candidate, url\)/);
