@@ -10,6 +10,7 @@ import { versionMediaSearchAssets } from './version-media-search-assets.mjs';
 import { generateDiverseMediaEngine } from './generate-diverse-media-engine.mjs';
 import { generateV4RuntimeEngine } from './generate-v4-runtime-engine.mjs';
 import { patchV4GroundingFallback } from './patch-v4-grounding-fallback.mjs';
+import { patchV4ModelApiCompatibility } from './patch-v4-model-api-compatibility.mjs';
 import './generate-deployment-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,6 +27,7 @@ const files = [
 await generateDiverseMediaEngine();
 await generateV4RuntimeEngine();
 await patchV4GroundingFallback();
+await patchV4ModelApiCompatibility();
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await mkdir(resolve(dist, 'vendor'), { recursive: true });
