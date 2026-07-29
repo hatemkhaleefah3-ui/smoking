@@ -74,10 +74,6 @@ export async function patchV4ModelApiCompatibility() {
     const responseText = (candidate?.content?.parts || [])
       .map((part) => typeof part?.text === 'string' ? part.text : '')
       .join(' ')
-      .replace(/^\
-\
-\\`\\`\\`(?:json)?\\s*/i, '')
-      .replace(/\\s*\\`\\`\\`$/i, '')
       .trim();
     let data;
     try {
