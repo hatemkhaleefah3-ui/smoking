@@ -61,9 +61,10 @@ jobs:
             await writeFile('live-media-diagnostic-output.json', `${output}\n`, 'utf8');
             assert.equal(liveResponse.status, 200);
             assert.equal(livePayload.deployment?.deploymentCommitSha, process.env.EXPECTED_SHA);
-            assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4');
+            assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4-runtime');
             assert.equal(livePayload.routeTrace?.[0]?.returnedResponse, true);
-            assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4');
+            assert.equal(livePayload.liveResponse?.status, 200);
+            assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4-runtime');
             console.log('Live deployed strict source-balanced visual media search validation passed.');
           }
           NODE

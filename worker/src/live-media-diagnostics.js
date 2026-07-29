@@ -11,6 +11,7 @@ const SEARCH_PATH = `/api/diagnostics/${DIAGNOSTIC_TOKEN}/media-search`;
 const DIAGNOSTIC_PAYLOAD = {
   intentSearch: true,
   strictRelevance: true,
+  diagnosticMode: true,
   imageId: 'img-live-albinism-melanin-pathway',
   label: 'Albinism melanin synthesis pathway',
   altTexts: [
@@ -30,6 +31,7 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
       requiredFixCommitSha: FIX_COMMIT_SHA,
       metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT,
       routeOrder: [
+        'multi-source-v4-runtime',
         'multi-source-v4',
         'multi-source-v3',
         'multi-source-v2',
@@ -80,7 +82,7 @@ function jsonResponse(value) {
   return Response.json(value, {
     headers: {
       'Cache-Control': 'no-store, max-age=0, must-revalidate',
-      'X-Lecture-Diagnostic': 'live-media-search-v4'
+      'X-Lecture-Diagnostic': 'live-media-search-v4-runtime'
     }
   });
 }
