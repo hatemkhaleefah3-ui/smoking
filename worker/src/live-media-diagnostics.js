@@ -62,22 +62,78 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
     responseBody = { nonJsonBody: responseText.slice(0, 2000) };
   }
 
+  const deployment = {
+    deploymentCommitSha: DEPLOYMENT_COMMIT_SHA,
+    requiredFixCommitSha: FIX_COMMIT_SHA,
+    metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT,
+    runtimeRelease
+  };
+  const elapsedMs = Date.now() - startedAt;
+  if (url.searchParams.get('compact') === '1') {
+    return jsonResponse({
+      deployment,
+      routeTrace,
+      liveResponse: {
+        status: response.status,
+        cacheControl: response.headers.get('cache-control') || '',
+        elapsedMs,
+        body: compactBody(responseBody)
+      }
+    });
+  }
+
   return jsonResponse({
-    deployment: {
-      deploymentCommitSha: DEPLOYMENT_COMMIT_SHA,
-      requiredFixCommitSha: FIX_COMMIT_SHA,
-      metadataGeneratedAt: DEPLOYMENT_METADATA_GENERATED_AT,
-      runtimeRelease
-    },
+    deployment,
     request: DIAGNOSTIC_PAYLOAD,
     routeTrace,
     liveResponse: {
       status: response.status,
       cacheControl: response.headers.get('cache-control') || '',
-      elapsedMs: Date.now() - startedAt,
+      elapsedMs,
       body: responseBody
     }
   });
+}
+
+function compactBody(body) {
+  const cycles = Array.isArray(body?.cycles) ? body.cycles.map((cycle) => ({
+    cycle: cycle?.cycle,
+    query: cycle?.query,
+    resultPage: cycle?.resultPage,
+    discovered: cycle?.discovered,
+    visuallyReviewed: cycle?.visuallyReviewed,
+    reviewedSources: cycle?.reviewedSources,
+    accepted: cycle?.accepted,
+    totalAccepted: cycle?.totalAccepted,
+    sources: cycle?.sources,
+    providerStatus: cycle?.providerStatus
+  })) : [];
+  const imageResults = Array.isArray(body?.imageResults) ? body.imageResults.map((item) => ({
+    source: item?.source,
+    title: item?.title,
+    resemblanceScore: item?.resemblanceScore,
+    visualCoverage: item?.visualCoverage,
+    matchedFeatures: item?.matchedFeatures,
+    acceptanceReason: item?.acceptanceReason
+  })) : [];
+  return {
+    engine: body?.engine,
+    error: body?.error,
+    diagnosticError: body?.diagnosticError,
+    quotaExhausted: body?.quotaExhausted,
+    retryable: body?.retryable,
+    googleSearchGrounding: body?.googleSearchGrounding,
+    groundingFallback: body?.groundingFallback,
+    groundingFailure: body?.groundingFailure,
+    geminiModelsUsed: body?.geminiModelsUsed,
+    usefulCount: body?.usefulCount,
+    stoppedReason: body?.stoppedReason,
+    providerDiagnostics: body?.providerDiagnostics,
+    sourceCounts: body?.sourceCounts,
+    searchedQueries: body?.searchedQueries,
+    cycles,
+    imageResults
+  };
 }
 
 function jsonResponse(value) {
