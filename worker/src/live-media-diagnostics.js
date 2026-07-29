@@ -69,7 +69,20 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
     runtimeRelease
   };
   const elapsedMs = Date.now() - startedAt;
-  if (url.searchParams.get('compact') === '1') {
+  const compactMode = url.searchParams.get('compact');
+  if (compactMode === 'counts') {
+    return jsonResponse({
+      deployment,
+      routeTrace,
+      liveResponse: {
+        status: response.status,
+        cacheControl: response.headers.get('cache-control') || '',
+        elapsedMs,
+        body: countsBody(responseBody)
+      }
+    });
+  }
+  if (compactMode === '1') {
     return jsonResponse({
       deployment,
       routeTrace,
@@ -95,8 +108,8 @@ export async function handleLiveMediaDiagnostics(request, env, url, routeMediaSe
   });
 }
 
-function compactBody(body) {
-  const cycles = Array.isArray(body?.cycles) ? body.cycles.map((cycle) => ({
+function compactCycles(body) {
+  return Array.isArray(body?.cycles) ? body.cycles.map((cycle) => ({
     cycle: cycle?.cycle,
     query: cycle?.query,
     resultPage: cycle?.resultPage,
@@ -108,7 +121,10 @@ function compactBody(body) {
     sources: cycle?.sources,
     providerStatus: cycle?.providerStatus
   })) : [];
-  const imageResults = Array.isArray(body?.imageResults) ? body.imageResults.map((item) => ({
+}
+
+function compactImages(body) {
+  return Array.isArray(body?.imageResults) ? body.imageResults.map((item) => ({
     source: item?.source,
     title: item?.title,
     resemblanceScore: item?.resemblanceScore,
@@ -116,23 +132,32 @@ function compactBody(body) {
     matchedFeatures: item?.matchedFeatures,
     acceptanceReason: item?.acceptanceReason
   })) : [];
+}
+
+function countsBody(body) {
   return {
     engine: body?.engine,
     error: body?.error,
-    diagnosticError: body?.diagnosticError,
     quotaExhausted: body?.quotaExhausted,
     retryable: body?.retryable,
     googleSearchGrounding: body?.googleSearchGrounding,
     groundingFallback: body?.groundingFallback,
-    groundingFailure: body?.groundingFailure,
     geminiModelsUsed: body?.geminiModelsUsed,
     usefulCount: body?.usefulCount,
     stoppedReason: body?.stoppedReason,
     providerDiagnostics: body?.providerDiagnostics,
     sourceCounts: body?.sourceCounts,
     searchedQueries: body?.searchedQueries,
-    cycles,
-    imageResults
+    cycles: compactCycles(body),
+    imageResults: compactImages(body)
+  };
+}
+
+function compactBody(body) {
+  return {
+    ...countsBody(body),
+    diagnosticError: body?.diagnosticError,
+    groundingFailure: body?.groundingFailure
   };
 }
 
