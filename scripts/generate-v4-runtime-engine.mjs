@@ -39,6 +39,36 @@ export async function generateV4RuntimeEngine() {
 
   source = replaceRequired(
     source,
+    `  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'multisource_v4_runtime_fallback',
+      message: error instanceof Error ? error.message : String(error)
+    }));
+    return null;
+  }`,
+    `  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(JSON.stringify({
+      event: 'multisource_v4_runtime_fallback',
+      message
+    }));
+    if (input?.diagnosticMode === true) {
+      return Response.json({
+        engine: 'multi-source-v4-runtime',
+        diagnosticFailure: true,
+        error: message
+      }, {
+        status: 502,
+        headers: { 'Cache-Control': 'no-store' }
+      });
+    }
+    return null;
+  }`,
+    'diagnostic runtime failure response'
+  );
+
+  source = replaceRequired(
+    source,
     `  const body = {
     contents: [{ role: 'user', parts }],
     generationConfig: {
