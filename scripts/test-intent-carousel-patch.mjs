@@ -17,17 +17,24 @@ try {
   assert.match(source, /strictRelevance:\s*true/);
   assert.match(source, /altTexts:\s*definition\.altTexts/);
   assert.match(source, /label:\s*definition\.label/);
-  assert.match(source, /Gemini is understanding and searching/);
+  assert.match(source, /Gemini is searching open media/);
   assert.match(source, /cardState\.usefulCount/);
   assert.match(source, /state\.activeSearches < 2/);
   assert.match(source, /enqueueSearch\(definition\)/);
   assert.match(source, /Waiting for Gemini search/);
+  assert.match(source, /result\.imageResults/);
+  assert.match(source, /item\.licenseUrl/);
+  assert.match(source, /item\.attribution/);
+  assert.match(source, /item\.sourcePage/);
+  assert.match(source, /image-candidate-credit/);
+  assert.match(source, /Original source/);
+  assert.match(source, /Select an image to view its source, license, and attribution/);
   assert.doesNotMatch(source, /for \(const altText of definition\.altTexts\)/);
 
   const syntax = spawnSync(process.execPath, ['--check', target], { encoding: 'utf8' });
   assert.equal(syntax.status, 0, syntax.stderr || syntax.stdout);
 
-  console.log('Strict, combined and queued carousel payload validation passed.');
+  console.log('Strict multi-source carousel and attribution validation passed.');
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
