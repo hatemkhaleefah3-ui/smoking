@@ -28,10 +28,12 @@ jobs:
           let last = null;
           for (let attempt = 1; attempt <= 40; attempt += 1) {
             try {
-              const response = await fetch(`${url}?attempt=${attempt}`, { headers: { 'Cache-Control': 'no-cache' } });
+              const response = await fetch(`${url}?attempt=${attempt}&ts=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
               last = await response.json();
-              console.log(`attempt=${attempt} status=${response.status} deployed=${last.deploymentCommitSha || 'missing'} expected=${expected}`);
-              if (response.ok && last.deploymentCommitSha === expected) process.exit(0);
+              console.log(`attempt=${attempt} status=${response.status} deployed=${last.deploymentCommitSha || 'missing'} release=${last.runtimeRelease || 'missing'} expected=${expected}`);
+              if (response.ok
+                && last.deploymentCommitSha === expected
+                && last.runtimeRelease === 'v4.4-provider-query-fallbacks') process.exit(0);
             } catch (error) {
               console.log(`attempt=${attempt} error=${error.message}`);
             }
@@ -49,23 +51,62 @@ jobs:
           cat >> scripts/test-media-search-multisource-v4.mjs <<'NODE'
 
           if (process.env.LIVE_MEDIA_DIAGNOSTIC_URL) {
-            const liveResponse = await fetch(`${process.env.LIVE_MEDIA_DIAGNOSTIC_URL}?ts=${Date.now()}`, {
-              headers: { 'Cache-Control': 'no-cache' }
-            });
-            const livePayload = await liveResponse.json();
+            const expected = process.env.EXPECTED_SHA;
+            let liveResponse;
+            let livePayload;
+            for (let attempt = 1; attempt <= 20; attempt += 1) {
+              liveResponse = await fetch(`${process.env.LIVE_MEDIA_DIAGNOSTIC_URL}?attempt=${attempt}&ts=${Date.now()}`, {
+                headers: { 'Cache-Control': 'no-cache' }
+              });
+              livePayload = await liveResponse.json();
+              const deployed = livePayload.deployment?.deploymentCommitSha || 'missing';
+              const release = livePayload.deployment?.runtimeRelease || livePayload.routeTrace?.[0]?.release || 'missing';
+              console.log(`media-attempt=${attempt} status=${liveResponse.status} deployed=${deployed} release=${release}`);
+              if (liveResponse.ok && deployed === expected && release === 'v4.4-provider-query-fallbacks') break;
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+            }
+
             const output = JSON.stringify(livePayload, null, 2);
             console.log('--- LIVE DEPLOYED V4 OUTPUT START ---');
             console.log(output);
             console.log('--- LIVE DEPLOYED V4 OUTPUT END ---');
             const { writeFile } = await import('node:fs/promises');
             await writeFile('live-media-diagnostic-output.json', `${output}\n`, 'utf8');
+
             assert.equal(liveResponse.status, 200);
-            assert.equal(livePayload.deployment?.deploymentCommitSha, process.env.EXPECTED_SHA);
+            assert.equal(livePayload.deployment?.deploymentCommitSha, expected);
+            assert.equal(livePayload.deployment?.runtimeRelease, 'v4.4-provider-query-fallbacks');
+            assert.equal(livePayload.routeTrace?.[0]?.release, 'v4.4-provider-query-fallbacks');
             assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4-runtime');
             assert.equal(livePayload.routeTrace?.[0]?.returnedResponse, true);
-            assert.equal(livePayload.liveResponse?.status, 200);
             assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4-runtime');
-            console.log('Live deployed strict source-balanced visual media search validation passed.');
+
+            const body = livePayload.liveResponse?.body || {};
+            if (livePayload.liveResponse?.status === 200) {
+              assert.equal(body.visualReview, true);
+            } else {
+              assert.ok([502, 503].includes(livePayload.liveResponse?.status));
+              assert.equal(body.discoveryCompleted, true);
+              assert.equal(body.visualReview, false);
+              assert.equal(body.usefulCount, 0);
+              assert.deepEqual(body.imageResults, []);
+              assert.equal(body.stoppedReason, 'gemini-unavailable-before-visual-review');
+            }
+
+            for (const source of ['Wikimedia Commons', 'Openverse', 'Wellcome Collection']) {
+              const diagnostics = body.providerDiagnostics?.[source];
+              assert.ok(diagnostics, `Missing diagnostics for ${source}`);
+              assert.ok(diagnostics.searchCalls >= 1, `${source} was not searched`);
+              assert.ok(diagnostics.queryAttempts >= 1, `${source} did not execute the query ladder`);
+              assert.ok(Array.isArray(diagnostics.lastQueries) && diagnostics.lastQueries.length >= 1, `${source} query trace is missing`);
+              assert.ok(diagnostics.rawFound > 0, `${source} returned no raw candidates after fallbacks`);
+              assert.ok(diagnostics.eligibleFound > 0, `${source} returned no eligible candidates after fallbacks`);
+              assert.ok(diagnostics.loadAttempts >= 1, `${source} never attempted a review-image download`);
+              assert.ok(diagnostics.loaded >= 1, `${source} did not load a review image`);
+              assert.equal(diagnostics.searchErrors, 0, `${source} search failed: ${diagnostics.lastSearchError}`);
+            }
+
+            console.log('Live deployed V4.4 provider-query fallback validation passed.');
           }
           NODE
           node scripts/test-media-search-multisource-v4.mjs

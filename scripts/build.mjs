@@ -9,6 +9,7 @@ import { patchRefreshMediaResults } from './refresh-media-results-patch.mjs';
 import { versionMediaSearchAssets } from './version-media-search-assets.mjs';
 import { generateDiverseMediaEngine } from './generate-diverse-media-engine.mjs';
 import { generateV4RuntimeEngine } from './generate-v4-runtime-engine.mjs';
+import { patchV4ProviderQueryFallbacks } from './patch-v4-provider-query-fallbacks.mjs';
 import { patchV4ProviderFunnelDiagnostics } from './patch-v4-provider-funnel-diagnostics.mjs';
 import './generate-deployment-metadata.mjs';
 
@@ -25,6 +26,7 @@ const files = [
 
 await generateDiverseMediaEngine();
 await generateV4RuntimeEngine();
+await patchV4ProviderQueryFallbacks();
 await patchV4ProviderFunnelDiagnostics();
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
