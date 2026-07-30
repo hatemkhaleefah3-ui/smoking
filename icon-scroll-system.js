@@ -75,10 +75,11 @@
 
   function visibleLabel(control) {
     const explicit = control.getAttribute('aria-label') || control.getAttribute('title');
-    if (explicit) return explicit.trim();
+    if (control.classList.contains('brand') && explicit) return explicit.trim();
     const clone = control.cloneNode(true);
     clone.querySelectorAll('.control-icon, .sr-only').forEach((node) => node.remove());
-    return clone.textContent.replace(/\s+/g, ' ').trim() || 'Action';
+    const text = clone.textContent.replace(/\s+/g, ' ').trim();
+    return text || explicit?.trim() || 'Action';
   }
 
   function iconFor(control, label) {
@@ -124,7 +125,7 @@
     control.dataset.iconized = 'true';
     control.dataset.icon = iconName;
     control.setAttribute('aria-label', label);
-    if (!control.hasAttribute('title')) control.setAttribute('title', label);
+    control.setAttribute('title', label);
   }
 
   function applyControls(root = document) {
@@ -190,7 +191,7 @@
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, characterData: true, subtree: true });
 
   window.IconScrollSystem = { initialize, applyControls, applyTracks };
 })();
