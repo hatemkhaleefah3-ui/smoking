@@ -10,7 +10,7 @@ assert.ok(jsMatch, 'The built page must reference a content-hashed carousel Java
 assert.ok(cssMatch, 'The built page must reference a content-hashed carousel stylesheet.');
 assert.equal(jsMatch[2], cssMatch[2], 'The carousel JavaScript and CSS must share one build identifier.');
 assert.match(index, new RegExp(`data-media-search-build="${jsMatch[2]}"`));
-assert.match(index, new RegExp(`Media ${jsMatch[2]}`));
+assert.match(index, /<meta name="media-search-runtime" content="[^"]+">/);
 assert.doesNotMatch(index, /src="image-candidate-carousel\.js"/);
 assert.doesNotMatch(index, /href="image-candidate-carousel\.css"/);
 
@@ -20,4 +20,4 @@ assert.match(headers, /\/index\.html[\s\S]*Cache-Control: no-store/);
 assert.match(headers, /image-candidate-carousel\.\*\.js[\s\S]*immutable/);
 assert.match(headers, /image-candidate-carousel\.\*\.css[\s\S]*immutable/);
 
-console.log(`Media search build ${jsMatch[2]} is cache-busted and visibly identifiable.`);
+console.log(`Media search build ${jsMatch[2]} is cache-busted and marked in the document.`);
