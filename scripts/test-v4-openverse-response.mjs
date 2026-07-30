@@ -139,7 +139,6 @@ try {
     body: JSON.stringify({
       intentSearch: true,
       strictRelevance: true,
-      diagnosticMode: true,
       imageId: 'img-albinism',
       label: 'Albinism melanin synthesis pathway',
       altTexts: ['Medical diagram showing tyrosinase, DOPA, melanin, and albinism.'],
@@ -148,12 +147,17 @@ try {
     })
   }), { GEMINI_API_KEY: 'quota-exhausted-test-key' });
 
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.engine, 'multi-source-v4-runtime');
   assert.equal(payload.discoveryCompleted, true);
   assert.equal(payload.visualReview, false);
-  assert.equal(payload.stoppedReason, 'gemini-unavailable-before-visual-review');
+  assert.equal(payload.fallbackMode, 'provider-text-ranking');
+  assert.equal(payload.degraded, true);
+  assert.equal(payload.diagnosticFailure, false);
+  assert.equal(payload.stoppedReason, 'gemini-unavailable-provider-fallback');
+  assert.equal(payload.usefulCount, 3);
+  assert.equal(payload.imageResults.length, 3);
   assert.equal(geminiCalls, 3);
   assert.equal(openverseSearchCalls, 2, 'Openverse HTML must be retried once before the JSON response succeeds.');
   assert.equal(openverseImageLoads, 1);
@@ -165,8 +169,13 @@ try {
   assert.equal(payload.providerDiagnostics.Openverse.searchErrors, 0);
   assert.equal(payload.providerDiagnostics.Openverse.imageErrors, 0);
   assert.equal(payload.loadedSourceCounts.Openverse, 1);
+  assert.deepEqual(new Set(payload.imageResults.map((item) => item.source)), new Set([
+    'Wikimedia Commons',
+    'Openverse',
+    'Wellcome Collection'
+  ]));
 
-  console.log('V4.6 Openverse HTML recovery and thumbnail loading validation passed.');
+  console.log('V4.7 Openverse HTML recovery and provider fallback validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
