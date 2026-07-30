@@ -197,4 +197,9 @@
     getSettings,
     get activeWizardStep() { return activeWizardStep; }
   };
+
+  const integrationScript = document.createElement('script');
+  integrationScript.src = 'studio-integration.js';
+  integrationScript.async = false;
+  document.head.append(integrationScript);
 })();
