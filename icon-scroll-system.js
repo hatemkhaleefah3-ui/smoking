@@ -21,7 +21,6 @@
     check: ['m5 12 4 4L19 6'],
     close: ['m6 6 12 12', 'M18 6 6 18'],
     retry: ['M19 7v5h-5', 'M19 12a7 7 0 1 1-2-5'],
-    newProject: ['M12 3v18', 'M3 12h18'],
     more: ['M6 12h.01', 'M12 12h.01', 'M18 12h.01']
   };
 
@@ -172,12 +171,22 @@
     applyTracks(root);
   }
 
+  function repairChangedControl(node) {
+    const element = node instanceof Element ? node : node?.parentElement;
+    const control = element?.closest?.(CONTROL_SELECTOR);
+    if (!control || control.querySelector('.control-icon')) return;
+    delete control.dataset.iconized;
+    iconize(control);
+  }
+
   initialize();
 
   const observer = new MutationObserver((records) => {
     for (const record of records) {
+      repairChangedControl(record.target);
       for (const node of record.addedNodes) {
         if (node instanceof Element) initialize(node);
+        repairChangedControl(node);
       }
     }
   });
