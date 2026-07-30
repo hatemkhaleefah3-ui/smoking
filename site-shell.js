@@ -202,4 +202,9 @@
   integrationScript.src = 'studio-integration.js';
   integrationScript.async = false;
   document.head.append(integrationScript);
+
+  const iconScrollScript = document.createElement('script');
+  iconScrollScript.src = 'icon-scroll-system.js';
+  iconScrollScript.async = false;
+  document.head.append(iconScrollScript);
 })();

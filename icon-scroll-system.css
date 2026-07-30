@@ -1,0 +1,286 @@
+/* Icon-first controls and horizontal slide collections. */
+
+.icon-only-control {
+  --icon-control-size: 48px;
+  position: relative;
+  display: inline-grid !important;
+  width: var(--icon-control-size) !important;
+  min-width: var(--icon-control-size) !important;
+  max-width: var(--icon-control-size) !important;
+  height: var(--icon-control-size) !important;
+  min-height: var(--icon-control-size) !important;
+  padding: 0 !important;
+  border-radius: 14px !important;
+  place-items: center !important;
+  flex: 0 0 var(--icon-control-size) !important;
+  gap: 0 !important;
+  line-height: 1 !important;
+  overflow: visible !important;
+}
+
+.icon-only-control.button-large {
+  --icon-control-size: 56px;
+  border-radius: 17px !important;
+}
+
+.icon-only-control .control-icon {
+  width: 23px;
+  height: 23px;
+  pointer-events: none;
+}
+
+.icon-only-control.button-large .control-icon { width: 26px; height: 26px; }
+.icon-only-control[disabled] { opacity: .42; }
+.icon-only-control:hover:not([disabled]) .control-icon { transform: scale(1.08); }
+.icon-only-control .control-icon { transition: transform .16s ease; }
+
+.brand.icon-only-control {
+  --icon-control-size: 48px;
+  color: var(--studio-accent);
+  border: 1px solid rgba(217,255,102,.3);
+  background: rgba(217,255,102,.075);
+}
+
+.primary-nav {
+  gap: 8px !important;
+  padding: 7px !important;
+}
+
+.primary-nav .icon-nav-control {
+  --icon-control-size: 46px;
+  color: var(--studio-muted);
+  background: transparent;
+}
+
+.primary-nav .icon-nav-control.is-active {
+  color: #111700;
+  background: var(--studio-accent);
+}
+
+.footer-inner nav .icon-nav-control {
+  --icon-control-size: 42px;
+  border: 1px solid var(--studio-line);
+  color: var(--studio-muted);
+  background: rgba(255,255,255,.02);
+}
+
+.topbar-action.icon-only-control {
+  border: 1px solid var(--studio-line-strong);
+}
+
+.hero-actions,
+.complete-actions,
+.button-row,
+.wizard-actions,
+.pdf-action-row {
+  align-items: center;
+}
+
+.wizard-actions {
+  justify-content: space-between !important;
+}
+
+.wizard-actions .icon-only-control,
+.complete-actions .icon-only-control,
+.button-row .icon-only-control {
+  flex: 0 0 var(--icon-control-size) !important;
+}
+
+.image-file-button.icon-only-control,
+.drop-button.icon-only-control,
+.image-candidate-action.icon-only-control {
+  --icon-control-size: 44px;
+  cursor: pointer;
+}
+
+.image-candidate-actions,
+.image-import-controls {
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+}
+
+/* Every card and image collection becomes a native left-to-right slide track. */
+[data-slide-track="true"] {
+  position: relative;
+  display: flex !important;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  grid-template-columns: none !important;
+  grid-auto-flow: initial !important;
+  grid-auto-columns: initial !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch;
+  gap: 14px !important;
+  padding: 4px 2px 18px !important;
+  direction: ltr;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 2px;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(217,255,102,.48) rgba(255,255,255,.035);
+}
+
+[data-slide-track="true"]::-webkit-scrollbar { height: 7px; }
+[data-slide-track="true"]::-webkit-scrollbar-track { border-radius: 999px; background: rgba(255,255,255,.035); }
+[data-slide-track="true"]::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(217,255,102,.48); }
+
+[data-slide-track="true"] > * {
+  min-width: 0;
+  flex: 0 0 clamp(285px, 34vw, 420px) !important;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+[data-slide-kind="card"] > * { flex-basis: clamp(290px, 36vw, 440px) !important; }
+[data-slide-kind="dimension"] > * { flex-basis: clamp(245px, 29vw, 340px) !important; }
+[data-slide-kind="design"] > * { flex-basis: clamp(310px, 42vw, 510px) !important; }
+[data-slide-kind="image"] > * { flex-basis: clamp(250px, 31vw, 360px) !important; }
+[data-slide-kind="wide"] > * { flex-basis: min(760px, 72vw) !important; }
+[data-slide-kind="utility"] > * { flex-basis: min(580px, 62vw) !important; }
+[data-slide-kind="compact"] > * { flex-basis: clamp(150px, 19vw, 220px) !important; }
+
+.workspace-card-featured,
+.design-option:last-child,
+.dimension-card:first-child {
+  grid-column: auto !important;
+}
+
+.process-list > li {
+  border: 1px solid var(--studio-line) !important;
+  border-radius: 18px;
+  padding: 24px !important;
+  background: rgba(255,255,255,.022);
+}
+
+.process-list > li:last-child { border-bottom: 1px solid var(--studio-line) !important; }
+
+.hero-proof[data-slide-track="true"] > div,
+.summary-stats[data-slide-track="true"] > div,
+.document-details dl[data-slide-track="true"] > div {
+  min-height: 96px;
+}
+
+.search-suggestions[data-slide-track="true"] {
+  width: calc(100% + 2px);
+}
+
+.search-suggestions[data-slide-track="true"] > button {
+  flex-basis: 48px !important;
+}
+
+.image-candidate-viewport[data-slide-track="true"] > .image-candidate-slide,
+.media-results-grid[data-slide-track="true"] > .media-result-card {
+  min-width: 0 !important;
+}
+
+.image-candidate-slide img,
+.media-result-card img,
+.image-import-preview img {
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@media (max-width: 780px) {
+  .topbar-inner {
+    grid-template-columns: auto 1fr !important;
+  }
+
+  .brand.icon-only-control {
+    justify-self: start;
+  }
+
+  .primary-nav {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: max(10px, env(safe-area-inset-bottom)) !important;
+    display: flex !important;
+    justify-content: space-around !important;
+    padding: 8px !important;
+  }
+
+  .primary-nav .icon-nav-control {
+    --icon-control-size: 52px;
+    border-radius: 17px !important;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
+  .hero-actions .icon-only-control {
+    width: 58px !important;
+    min-width: 58px !important;
+    max-width: 58px !important;
+    height: 58px !important;
+    min-height: 58px !important;
+    flex-basis: 58px !important;
+  }
+
+  [data-slide-track="true"] {
+    width: calc(100% + 24px);
+    margin-inline: -12px !important;
+    padding-inline: 12px !important;
+    scroll-padding-inline: 12px;
+    gap: 12px !important;
+  }
+
+  [data-slide-track="true"] > * { flex-basis: min(84vw, 390px) !important; }
+  [data-slide-kind="dimension"] > * { flex-basis: min(76vw, 315px) !important; }
+  [data-slide-kind="design"] > * { flex-basis: min(88vw, 430px) !important; }
+  [data-slide-kind="image"] > * { flex-basis: min(78vw, 330px) !important; }
+  [data-slide-kind="wide"] > * { flex-basis: min(92vw, 650px) !important; }
+  [data-slide-kind="utility"] > * { flex-basis: min(90vw, 520px) !important; }
+  [data-slide-kind="compact"] > * { flex-basis: 155px !important; }
+
+  .wizard-actions,
+  .media-wizard-actions {
+    justify-content: space-between !important;
+    padding-inline: 14px !important;
+  }
+
+  .wizard-actions .icon-only-control,
+  .media-wizard-actions .icon-only-control {
+    --icon-control-size: 54px;
+  }
+
+  .search-input-wrap {
+    grid-template-columns: auto minmax(0,1fr) auto !important;
+  }
+
+  .search-input-wrap .icon-only-control {
+    grid-column: auto !important;
+    width: 50px !important;
+    min-width: 50px !important;
+    max-width: 50px !important;
+    height: 50px !important;
+    min-height: 50px !important;
+  }
+
+  .pdf-action-row {
+    justify-content: center;
+  }
+
+  .pdf-action-row .icon-only-control {
+    min-width: 56px !important;
+    width: 56px !important;
+    max-width: 56px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .primary-nav .icon-nav-control { --icon-control-size: 48px; }
+  [data-slide-track="true"] > * { flex-basis: 86vw !important; }
+  [data-slide-kind="compact"] > * { flex-basis: 145px !important; }
+  .icon-only-control { --icon-control-size: 46px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slide-track="true"] { scroll-behavior: auto; }
+  .icon-only-control .control-icon { transition: none; }
+}
