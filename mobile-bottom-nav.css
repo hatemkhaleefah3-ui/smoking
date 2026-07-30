@@ -1,0 +1,88 @@
+/* Final mobile navigation placement override. Loaded after all studio themes. */
+@media (max-width: 900px), (max-width: 1024px) and (pointer: coarse) {
+  :root {
+    --bottom-nav-height: 72px;
+    --bottom-nav-edge: 10px;
+  }
+
+  body {
+    padding-bottom: calc(var(--bottom-nav-height) + 30px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .topbar-inner {
+    grid-template-columns: auto 1fr !important;
+  }
+
+  .topbar .primary-nav,
+  .primary-nav {
+    position: fixed !important;
+    top: auto !important;
+    right: var(--bottom-nav-edge) !important;
+    bottom: max(var(--bottom-nav-edge), env(safe-area-inset-bottom)) !important;
+    left: var(--bottom-nav-edge) !important;
+    z-index: 1000 !important;
+    width: auto !important;
+    max-width: none !important;
+    min-height: var(--bottom-nav-height) !important;
+    height: var(--bottom-nav-height) !important;
+    margin: 0 !important;
+    padding: 8px !important;
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    align-items: center !important;
+    justify-items: stretch !important;
+    gap: 6px !important;
+    overflow: visible !important;
+    transform: none !important;
+    border: 1px solid rgba(178, 205, 218, .24) !important;
+    border-radius: 24px !important;
+    background: rgba(8, 18, 27, .96) !important;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, .58), inset 0 1px rgba(255, 255, 255, .04) !important;
+    backdrop-filter: blur(26px) saturate(160%) !important;
+    -webkit-backdrop-filter: blur(26px) saturate(160%) !important;
+  }
+
+  .primary-nav .icon-nav-control,
+  .primary-nav > a {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    flex: 1 1 auto !important;
+    border-radius: 18px !important;
+    place-items: center !important;
+  }
+
+  .primary-nav .control-icon {
+    width: 25px !important;
+    height: 25px !important;
+  }
+
+  .route-page,
+  .site-footer {
+    scroll-margin-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+  }
+
+  .site-footer {
+    padding-bottom: calc(var(--bottom-nav-height) + 42px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  :root {
+    --bottom-nav-edge: 7px;
+  }
+
+  .topbar .primary-nav,
+  .primary-nav {
+    gap: 4px !important;
+    padding: 7px !important;
+  }
+
+  .primary-nav .icon-nav-control,
+  .primary-nav > a {
+    height: 54px !important;
+    min-height: 54px !important;
+  }
+}
