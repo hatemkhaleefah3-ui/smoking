@@ -34,7 +34,7 @@ jobs:
               console.log(`attempt=${attempt} status=${response.status} deployed=${last.deploymentCommitSha || 'missing'} release=${last.runtimeRelease || 'missing'} expected=${expected}`);
               if (response.ok
                 && last.deploymentCommitSha === expected
-                && last.runtimeRelease === 'v4.6-openverse-json-recovery') process.exit(0);
+                && last.runtimeRelease === 'v4.7-provider-text-fallback') process.exit(0);
             } catch (error) {
               console.log(`attempt=${attempt} error=${error.message}`);
             }
@@ -44,7 +44,7 @@ jobs:
           process.exit(1);
           NODE
 
-      - name: Run exact V4 test script against deployed Worker
+      - name: Run real browser-equivalent media request against deployed Worker
         env:
           EXPECTED_SHA: ${{ github.sha }}
           LIVE_MEDIA_DIAGNOSTIC_URL: https://smoking-e1j.pages.dev/api/diagnostics/9c593829f5c04b3e9ffb86724c4c3b75/media-search
@@ -63,7 +63,7 @@ jobs:
               const deployed = livePayload.deployment?.deploymentCommitSha || 'missing';
               const release = livePayload.deployment?.runtimeRelease || livePayload.routeTrace?.[0]?.release || 'missing';
               console.log(`media-attempt=${attempt} status=${liveResponse.status} deployed=${deployed} release=${release}`);
-              if (liveResponse.ok && deployed === expected && release === 'v4.6-openverse-json-recovery') break;
+              if (liveResponse.ok && deployed === expected && release === 'v4.7-provider-text-fallback') break;
               await new Promise((resolve) => setTimeout(resolve, 10000));
             }
 
@@ -76,22 +76,26 @@ jobs:
 
             assert.equal(liveResponse.status, 200);
             assert.equal(livePayload.deployment?.deploymentCommitSha, expected);
-            assert.equal(livePayload.deployment?.runtimeRelease, 'v4.6-openverse-json-recovery');
-            assert.equal(livePayload.routeTrace?.[0]?.release, 'v4.6-openverse-json-recovery');
+            assert.equal(livePayload.deployment?.runtimeRelease, 'v4.7-provider-text-fallback');
+            assert.equal(livePayload.routeTrace?.[0]?.release, 'v4.7-provider-text-fallback');
             assert.equal(livePayload.routeTrace?.[0]?.handler, 'multi-source-v4-runtime');
             assert.equal(livePayload.routeTrace?.[0]?.returnedResponse, true);
+            assert.equal(livePayload.routeTrace?.[0]?.status, 200);
+            assert.equal(livePayload.request?.diagnosticMode, undefined, 'Diagnostic must use the real browser request path.');
+            assert.equal(livePayload.liveResponse?.status, 200);
             assert.equal(livePayload.liveResponse?.body?.engine, 'multi-source-v4-runtime');
 
             const body = livePayload.liveResponse?.body || {};
-            if (livePayload.liveResponse?.status === 200) {
-              assert.equal(body.visualReview, true);
+            assert.ok(Array.isArray(body.imageResults), 'Live response did not include imageResults.');
+            assert.ok(body.imageResults.length >= 1, 'Live response returned zero images.');
+            assert.equal(body.usefulCount, body.imageResults.length);
+            assert.ok(body.images?.length >= 1, 'Live response returned no image URLs.');
+            if (body.visualReview === false) {
+              assert.equal(body.fallbackMode, 'provider-text-ranking');
+              assert.equal(body.degraded, true);
+              assert.equal(body.stoppedReason, 'gemini-unavailable-provider-fallback');
             } else {
-              assert.ok([502, 503].includes(livePayload.liveResponse?.status));
-              assert.equal(body.discoveryCompleted, true);
-              assert.equal(body.visualReview, false);
-              assert.equal(body.usefulCount, 0);
-              assert.deepEqual(body.imageResults, []);
-              assert.equal(body.stoppedReason, 'gemini-unavailable-before-visual-review');
+              assert.equal(body.visualReview, true);
             }
 
             for (const source of ['Wikimedia Commons', 'Openverse', 'Wellcome Collection']) {
@@ -102,13 +106,13 @@ jobs:
               assert.ok(Array.isArray(diagnostics.lastQueries) && diagnostics.lastQueries.length >= 1, `${source} query trace is missing`);
               assert.ok(diagnostics.rawFound > 0, `${source} returned no raw candidates after fallbacks`);
               assert.ok(diagnostics.eligibleFound > 0, `${source} returned no eligible candidates after fallbacks`);
-              assert.ok(diagnostics.loadAttempts >= 1, `${source} never attempted a review-image download`);
-              assert.ok(diagnostics.loaded >= 1, `${source} did not load a review image`);
+              assert.ok(diagnostics.loadAttempts >= 1, `${source} never attempted an image download`);
+              assert.ok(diagnostics.loaded >= 1, `${source} did not load an image`);
               assert.equal(diagnostics.searchErrors, 0, `${source} search failed: ${diagnostics.lastSearchError}`);
               assert.equal(diagnostics.imageErrors, 0, `${source} image delivery failed: ${diagnostics.lastImageError}`);
             }
 
-            console.log('Live deployed V4.6 Openverse JSON recovery validation passed.');
+            console.log('Live deployed V4.7 browser-equivalent media fallback validation passed.');
           }
           NODE
           node scripts/test-media-search-multisource-v4.mjs
