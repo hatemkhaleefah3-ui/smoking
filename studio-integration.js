@@ -128,4 +128,9 @@
     if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`;
     return `${(size / 1024 ** 2).toFixed(1)} MB`;
   }
+
+  const iconSystemScript = document.createElement('script');
+  iconSystemScript.src = 'icon-scroll-system.js';
+  iconSystemScript.async = false;
+  document.head.append(iconSystemScript);
 })();
