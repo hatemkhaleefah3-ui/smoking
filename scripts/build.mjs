@@ -18,9 +18,9 @@ import './generate-deployment-metadata.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 const files = [
-  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'mobile-studio.css',
+  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'mobile-studio.css', 'icon-scroll-system.css',
   'image-import.css', 'pdf-image-autofill.css', 'image-candidate-carousel.css', 'pdf-extractor.css',
-  'app.js', 'site-shell.js', 'studio-integration.js',
+  'app.js', 'site-shell.js', 'studio-integration.js', 'icon-scroll-system.js',
   'image-import.js', 'pdf-image-autofill.js', 'image-candidate-carousel.js', 'pdf-extractor.js',
   'media-search-runtime-release.js',
   'lecture-renderer.js', 'clinical-v2-adapter.js',
@@ -60,7 +60,7 @@ const browserNodeBuiltins = {
     context.onLoad({ filter: /.*/, namespace: 'browser-node-builtin' }, ({ path }) => ({
       loader: 'js',
       contents: path === 'module'
-        ? `export function createRequire() { return () => { throw new Error('Node require is unavailable in this browser runtime.'); }; }\nexport default { createRequire };`
+        ? `export function createRequire() { return () => { throw new Error('Node require is unavailable in this browser runtime.'); };}\nexport default { createRequire };`
         : `const unavailable = () => { throw new Error('Node ${path} is unavailable in this browser runtime.'); };\nexport const readFileSync = unavailable;\nexport const readFile = unavailable;\nexport const dirname = unavailable;\nexport const resolve = unavailable;\nexport const join = unavailable;\nexport const promises = {};\nexport default {};`
     }));
   }
