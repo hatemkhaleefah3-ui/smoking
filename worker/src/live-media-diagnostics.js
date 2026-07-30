@@ -11,12 +11,11 @@ const SEARCH_PATH = `/api/diagnostics/${DIAGNOSTIC_TOKEN}/media-search`;
 const DIAGNOSTIC_PAYLOAD = {
   intentSearch: true,
   strictRelevance: true,
-  diagnosticMode: true,
-  imageId: 'img-live-albinism-melanin-pathway',
-  label: 'Albinism melanin synthesis pathway',
+  imageId: 'img-glycine-synthesis-oxidation',
+  label: 'Glycine synthesis and oxidation reactions',
   altTexts: [
-    'Medical pathway diagram showing tyrosinase converting tyrosine through DOPA into melanin, with the blocked enzyme step responsible for albinism.',
-    'Educational comparison of normal melanin production and reduced pigmentation caused by tyrosinase deficiency in oculocutaneous albinism.'
+    'Biochemical pathway diagram showing glycine synthesis from serine and glycine oxidation through the glycine cleavage system.',
+    'Educational metabolic pathway showing glycine synthesis, interconversion, and oxidation reactions.'
   ],
   searchRun: 0,
   excludedUrls: []
