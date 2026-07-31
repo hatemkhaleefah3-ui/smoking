@@ -18,7 +18,7 @@ import './generate-deployment-metadata.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 const files = [
-  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'mobile-studio.css', 'icon-scroll-system.css', 'mobile-bottom-nav.css', 'responsive-blue-studio.css',
+  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'icon-scroll-system.css', 'studio-rebuild.css',
   'image-import.css', 'pdf-image-autofill.css', 'image-candidate-carousel.css', 'pdf-extractor.css',
   'app.js', 'site-shell.js', 'studio-integration.js', 'icon-scroll-system.js',
   'image-import.js', 'pdf-image-autofill.js', 'image-candidate-carousel.js', 'pdf-extractor.js',
