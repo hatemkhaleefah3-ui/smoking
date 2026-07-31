@@ -3,4 +3,4 @@ export {
   ensureImageFeedbackSchema,
   imageSearchErrorResponse,
   rankResults
-} from './image-search-core.js';
+} from './image-search-live.js';
