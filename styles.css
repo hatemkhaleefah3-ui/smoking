@@ -1,6 +1,4 @@
 @import url('./legacy-styles.css');
 @import url('./studio-shell.css');
-@import url('./mobile-studio.css');
 @import url('./icon-scroll-system.css');
-@import url('./mobile-bottom-nav.css');
-@import url('./responsive-blue-studio.css');
+@import url('./studio-rebuild.css');

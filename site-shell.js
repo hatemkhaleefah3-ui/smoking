@@ -1,6 +1,14 @@
 'use strict';
 
 (() => {
+  const primaryNav = document.querySelector('.primary-nav');
+  const appMain = document.querySelector('#app-main');
+  if (primaryNav && appMain && primaryNav.parentElement !== document.body) {
+    primaryNav.classList.add('app-navigation');
+    primaryNav.setAttribute('data-root-navigation', 'true');
+    document.body.insertBefore(primaryNav, appMain);
+  }
+
   const routePages = [...document.querySelectorAll('[data-route-page]')];
   const routeLinks = [...document.querySelectorAll('[data-route-link]')];
   const wizardPanels = [...document.querySelectorAll('[data-wizard-panel]')];
