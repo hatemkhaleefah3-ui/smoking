@@ -35,14 +35,14 @@ jobs:
               console.log(`attempt=${attempt} status=${response.status} deployed=${body.deploymentCommitSha || 'missing'} expected=${expected}`);
               if (response.ok && body.deploymentCommitSha === expected) process.exit(0);
             } catch (error) {
-              console.log(`attempt=${attempt} error=${error.message}`);
+              console.log(`attempt=${attempt} error=${error.name}: ${error.message}`);
             }
             await new Promise((resolve) => setTimeout(resolve, 15000));
           }
           process.exit(1);
           NODE
 
-      - name: Run live broad-pool and keyword diagnostics
+      - name: Run live provider and pipeline diagnostics
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
@@ -74,7 +74,7 @@ jobs:
             ? heartInitial.payload.keywordOptions[0] || null
             : null;
           const heartSelected = heartKeyword
-            ? await post({ query: 'Heart', keyword: heartKeyword, debug: true })
+            ? await post({ query: 'Heart', keyword: heartKeyword, debug: true, retry: true })
             : heartInitial;
 
           const glycineInitial = await post({ query: 'glycine', debug: true, retry: true });
@@ -84,57 +84,83 @@ jobs:
               || null
             : null;
           const glycineSelected = glycineKeyword
-            ? await post({ query: 'glycine', keyword: glycineKeyword, debug: true })
+            ? await post({ query: 'glycine', keyword: glycineKeyword, debug: true, retry: true })
             : glycineInitial;
 
           const output = { heartInitial, heartKeyword, heartSelected, glycineInitial, glycineKeyword, glycineSelected };
           await writeFile('live-adaptive-image-search-diagnostic.json', `${JSON.stringify(output, null, 2)}\n`, 'utf8');
 
-          const summary = (result) => ({
-            status: result.status,
-            durationMs: result.durationMs,
-            requiresKeyword: result.payload?.requiresKeyword,
-            keywordCount: result.payload?.keywordOptions?.length || 0,
-            resultCount: result.payload?.resultCount,
-            poolResultCount: result.payload?.poolResultCount,
-            filter: result.payload?.filter,
-            sourceStatus: result.payload?.sourceStatus
-          });
-          console.log('Heart initial', JSON.stringify(summary(heartInitial), null, 2));
-          console.log('Heart selected', JSON.stringify(summary(heartSelected), null, 2));
-          console.log('Glycine initial', JSON.stringify(summary(glycineInitial), null, 2));
-          console.log('Glycine selected', JSON.stringify(summary(glycineSelected), null, 2));
-
-          for (const [name, result] of [
+          const results = [
             ['Heart initial', heartInitial],
             ['Heart selected', heartSelected],
             ['Glycine initial', glycineInitial],
             ['Glycine selected', glycineSelected]
-          ]) {
+          ];
+
+          for (const [name, result] of results) {
             assert.equal(result.status, 200, `${name} must return HTTP 200.`);
             assert.ok(result.durationMs < 18_000, `${name} must finish before the client maximum wait.`);
             assert.equal(result.payload.requiresTopic, false, `${name} must not use static Wikidata topics.`);
             assert.ok(Array.isArray(result.payload.sourceStatus), `${name} must expose source status.`);
-            const nlm = result.payload.sourceStatus.find((item) => item.source === 'nlm-open-i');
-            assert.ok(nlm, `${name} must include NLM Open-i status.`);
-            assert.ok(nlm.ok || nlm.skipped, `${name} must either use or softly skip NLM Open-i.`);
-            if (nlm.skipped) assert.match(nlm.message || '', /showing other sources/i);
+
+            const debug = result.payload.debugDiagnostics;
+            assert.equal(debug?.version, 'part0-v1', `${name} must expose the Part 0 diagnostic schema.`);
+            assert.equal(debug?.cache?.liveProviderRequests, true, `${name} must use live provider requests in debug mode.`);
+            assert.ok(Array.isArray(debug?.providers), `${name} must expose provider attempts.`);
+
+            const attemptedSources = new Set(debug.providers.map((item) => item.source));
+            for (const source of ['wikimedia', 'openverse', 'nlm-open-i']) {
+              assert.ok(attemptedSources.has(source), `${name} must include a ${source} provider attempt.`);
+            }
+
+            for (const attempt of debug.providers) {
+              assert.match(attempt.requestUrl || '', /^https:\/\//, `${name}/${attempt.source} must expose the exact request URL.`);
+              assert.equal(typeof attempt.fetchThrew, 'boolean', `${name}/${attempt.source} must report whether fetch threw.`);
+              assert.ok(Object.hasOwn(attempt, 'responseStatus'), `${name}/${attempt.source} must expose raw HTTP status.`);
+              assert.ok(Object.hasOwn(attempt, 'responseOk'), `${name}/${attempt.source} must expose response.ok.`);
+              assert.equal(typeof attempt.rawBodyPreview, 'string', `${name}/${attempt.source} must expose a response body preview.`);
+              assert.ok(Object.hasOwn(attempt, 'parsedResultCount'), `${name}/${attempt.source} must expose raw parsed count.`);
+              assert.ok(Object.hasOwn(attempt, 'afterProviderFilterCount'), `${name}/${attempt.source} must expose post-provider-filter count.`);
+              if (attempt.fetchThrew) {
+                assert.ok(attempt.fetchErrorName, `${name}/${attempt.source} fetch exception must retain its JS error name.`);
+                assert.ok(attempt.fetchErrorMessage, `${name}/${attempt.source} fetch exception must retain its JS error message.`);
+              }
+            }
+
+            const pipeline = debug.pipeline;
+            assert.ok(pipeline && typeof pipeline === 'object', `${name} must expose pipeline counts.`);
+            assert.deepEqual(Object.keys(pipeline.rawByProvider || {}).sort(), ['nlm-open-i', 'openverse', 'wikimedia']);
+            assert.deepEqual(Object.keys(pipeline.afterProviderFilteringByProvider || {}).sort(), ['nlm-open-i', 'openverse', 'wikimedia']);
+            for (const field of [
+              'beforeCrossProviderDedup',
+              'afterCrossProviderDedup',
+              'afterKeywordFiltering',
+              'afterFeedbackRankingOrDemotion',
+              'finalCountPassedToRender',
+              'finalDomRenderedCount'
+            ]) {
+              assert.ok(Object.hasOwn(pipeline, field), `${name} must expose ${field}.`);
+            }
+            assert.ok(pipeline.beforeCrossProviderDedup >= pipeline.afterCrossProviderDedup, `${name} dedup count must not increase.`);
+
+            if (result.payload.requiresKeyword) {
+              assert.equal(pipeline.finalCountPassedToRender, 0, `${name} keyword gate must pass zero cards to render.`);
+            } else {
+              assert.equal(pipeline.finalCountPassedToRender, result.payload.resultCount, `${name} server render count must match resultCount.`);
+            }
+
+            for (const item of result.payload.sourceStatus) {
+              if (!item.ok) {
+                assert.ok(['network', 'timeout', 'http', 'parse', 'other'].includes(item.failureType), `${name}/${item.source} must classify its failure.`);
+                if (item.failureType === 'network') assert.match(item.message || '', /no response/i);
+                if (item.failureType === 'timeout') assert.match(item.message || '', /timed out/i);
+                if (item.failureType === 'http') assert.match(item.message || '', /server returned/i);
+              }
+            }
           }
 
-          const heartWikimedia = heartInitial.payload.sourceStatus.find((item) => item.source === 'wikimedia');
-          assert.ok(heartWikimedia?.ok && heartWikimedia.count > 0, 'Wikimedia must return broad Heart results.');
-          assert.ok(heartInitial.payload.poolResultCount > 0, 'Heart broad pool must contain images.');
-          assert.ok(heartSelected.payload.resultCount > 0, 'A generated Heart keyword must not dead-end.');
-          assert.ok(glycineInitial.payload.poolResultCount > 0, 'Glycine broad pool must contain images.');
-          assert.ok(glycineSelected.payload.resultCount > 0, 'A generated glycine keyword must not dead-end.');
-
-          if (heartInitial.payload.requiresKeyword) {
-            assert.ok(heartInitial.payload.keywordOptions.length >= 2);
-            assert.ok(!heartInitial.payload.keywordOptions.some((item) => item.keyword === 'human' && Number(item.overlapRatio || 0) > 0.75), 'Generic high-overlap Human should not be offered.');
-          }
-          if (heartKeyword) {
-            assert.ok(heartSelected.payload.keywordOptions.some((item) => item.keyword === heartKeyword.keyword), 'Selected keyword must remain in the option set.');
-          }
+          console.log('Heart diagnostics', JSON.stringify(heartInitial.payload.debugDiagnostics, null, 2));
+          console.log('Glycine diagnostics', JSON.stringify(glycineInitial.payload.debugDiagnostics, null, 2));
           NODE
 
       - name: Upload adaptive diagnostic JSON

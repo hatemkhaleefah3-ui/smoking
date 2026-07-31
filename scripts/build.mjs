@@ -14,6 +14,7 @@ import { patchV4OpenverseResponse } from './patch-v4-openverse-response.mjs';
 import { patchV4ProviderImageDelivery } from './patch-v4-provider-image-delivery.mjs';
 import { patchV4ProviderFunnelDiagnostics } from './patch-v4-provider-funnel-diagnostics.mjs';
 import { patchAdaptiveOpenverseAnonymousLimit } from './patch-adaptive-openverse-anonymous-limit.mjs';
+import { patchAdaptiveImageSearchDiagnostics } from './patch-adaptive-image-search-diagnostics.mjs';
 import './generate-deployment-metadata.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,6 +37,7 @@ await patchV4OpenverseResponse();
 await patchV4ProviderImageDelivery();
 await patchV4ProviderFunnelDiagnostics();
 await patchAdaptiveOpenverseAnonymousLimit(root);
+await patchAdaptiveImageSearchDiagnostics();
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 await mkdir(resolve(dist, 'vendor'), { recursive: true });
