@@ -37,6 +37,11 @@
   const preview = document.querySelector('.preview-visual');
   if (preview) preview.setAttribute('aria-label', 'Glycine oxidation pathway diagram');
 
+  const adaptiveSearchScript = document.createElement('script');
+  adaptiveSearchScript.src = 'adaptive-image-search.js';
+  adaptiveSearchScript.async = false;
+  document.head.append(adaptiveSearchScript);
+
   function preserveNumberLabels(root) {
     if (root instanceof Element && root.matches('.pdf-number-choice')) root.dataset.keepText = 'true';
     root.querySelectorAll?.('.pdf-number-choice').forEach((button) => {
