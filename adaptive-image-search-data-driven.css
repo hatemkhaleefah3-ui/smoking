@@ -1,0 +1,31 @@
+/* Data-driven adaptive search refinements. */
+
+/* The current API requires a generated keyword before a refined view is shown. */
+#adaptive-image-topic-options > .adaptive-topic-choice:first-child {
+  display: none !important;
+}
+
+.adaptive-topic-choice.is-selected,
+.adaptive-topic-choice[aria-pressed='true'] {
+  border-color: var(--blue-500, #2563eb);
+  background: color-mix(in srgb, var(--blue-500, #2563eb) 14%, white);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue-500, #2563eb) 15%, transparent);
+}
+
+.adaptive-image-source-status .is-soft-skip {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.adaptive-image-search.is-extracting .adaptive-image-search-heading::after {
+  content: 'Analyzing caption sentences…';
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue-500, #2563eb) 10%, white);
+  color: var(--blue-700, #1d4ed8);
+  font-size: 0.78rem;
+  font-weight: 700;
+}

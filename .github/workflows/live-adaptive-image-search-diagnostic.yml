@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  diagnose-provider-resilience:
+  diagnose-data-driven-search:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -42,25 +42,21 @@ jobs:
           process.exit(1);
           NODE
 
-      - name: Run live Heart and glycine resilience diagnostics
+      - name: Run live broad-pool and keyword diagnostics
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { writeFile } from 'node:fs/promises';
 
           const endpoint = 'https://smoking-e1j.pages.dev/api/image-search';
-
-          const post = async (body, timeoutMs = 20_000) => {
+          const post = async (body, timeoutMs = 18_000) => {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), timeoutMs);
             const startedAt = Date.now();
             try {
               const response = await fetch(`${endpoint}?ts=${Date.now()}`, {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Cache-Control': 'no-cache'
-                },
+                headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' },
                 signal: controller.signal,
                 body: JSON.stringify(body)
               });
@@ -73,75 +69,72 @@ jobs:
             }
           };
 
-          const heart = await post({ query: 'Heart', debug: true, retry: true });
-          const ambiguity = await post({ query: 'glycine', debug: true, retry: true });
-          const nutritionTopic = ambiguity.payload?.topics?.find((topic) => topic.id === 'nutrition-metabolism') || null;
-          const nutrition = await post({
-            query: 'glycine',
-            topic: nutritionTopic,
-            debug: true,
-            retry: true,
-            excludeUrls: []
-          });
+          const heartInitial = await post({ query: 'Heart', debug: true, retry: true });
+          const heartKeyword = Array.isArray(heartInitial.payload?.keywordOptions)
+            ? heartInitial.payload.keywordOptions[0] || null
+            : null;
+          const heartSelected = heartKeyword
+            ? await post({ query: 'Heart', keyword: heartKeyword, debug: true })
+            : heartInitial;
 
-          const output = { heart, ambiguity, nutritionTopic, nutrition };
-          await writeFile(
-            'live-adaptive-image-search-diagnostic.json',
-            `${JSON.stringify(output, null, 2)}\n`,
-            'utf8'
-          );
+          const glycineInitial = await post({ query: 'glycine', debug: true, retry: true });
+          const glycineKeyword = Array.isArray(glycineInitial.payload?.keywordOptions)
+            ? glycineInitial.payload.keywordOptions.find((item) => /metabol/i.test(`${item.keyword} ${item.label}`))
+              || glycineInitial.payload.keywordOptions[0]
+              || null
+            : null;
+          const glycineSelected = glycineKeyword
+            ? await post({ query: 'glycine', keyword: glycineKeyword, debug: true })
+            : glycineInitial;
+
+          const output = { heartInitial, heartKeyword, heartSelected, glycineInitial, glycineKeyword, glycineSelected };
+          await writeFile('live-adaptive-image-search-diagnostic.json', `${JSON.stringify(output, null, 2)}\n`, 'utf8');
 
           const summary = (result) => ({
             status: result.status,
             durationMs: result.durationMs,
-            requiresTopic: result.payload?.requiresTopic,
+            requiresKeyword: result.payload?.requiresKeyword,
+            keywordCount: result.payload?.keywordOptions?.length || 0,
             resultCount: result.payload?.resultCount,
-            externalQuery: result.payload?.externalQuery,
+            poolResultCount: result.payload?.poolResultCount,
+            filter: result.payload?.filter,
             sourceStatus: result.payload?.sourceStatus
           });
-          console.log('Heart summary', JSON.stringify(summary(heart), null, 2));
-          console.log('Glycine ambiguity summary', JSON.stringify({
-            status: ambiguity.status,
-            durationMs: ambiguity.durationMs,
-            topics: ambiguity.payload?.topics?.map((topic) => topic.id) || []
-          }, null, 2));
-          console.log('Nutrition summary', JSON.stringify(summary(nutrition), null, 2));
+          console.log('Heart initial', JSON.stringify(summary(heartInitial), null, 2));
+          console.log('Heart selected', JSON.stringify(summary(heartSelected), null, 2));
+          console.log('Glycine initial', JSON.stringify(summary(glycineInitial), null, 2));
+          console.log('Glycine selected', JSON.stringify(summary(glycineSelected), null, 2));
 
-          assert.equal(heart.status, 200);
-          assert.equal(heart.payload.requiresTopic, false);
-          assert.ok(heart.durationMs < 20_000, 'Heart search must finish before the client maximum wait.');
-          const heartSource = (name) => heart.payload.sourceStatus.find((item) => item.source === name);
-          assert.ok(heartSource('wikimedia')?.ok, 'Wikimedia must complete for Heart.');
-          assert.ok(heartSource('wikimedia')?.count > 0, 'Wikimedia must return Heart images.');
-          assert.ok(heartSource('openverse'), 'Openverse status must be present.');
-          const heartNlm = heartSource('nlm-open-i');
-          assert.ok(heartNlm, 'NLM Open-i status must be present.');
-          assert.ok(
-            heartNlm.ok || heartNlm.skipped,
-            'NLM Open-i must either return results or expose a soft skipped-provider state.'
-          );
-          if (heartNlm.skipped) assert.match(heartNlm.message || '', /showing other sources/i);
-          if (heartNlm.timedOut) assert.match(heartNlm.message || '', /timed out/i);
+          for (const [name, result] of [
+            ['Heart initial', heartInitial],
+            ['Heart selected', heartSelected],
+            ['Glycine initial', glycineInitial],
+            ['Glycine selected', glycineSelected]
+          ]) {
+            assert.equal(result.status, 200, `${name} must return HTTP 200.`);
+            assert.ok(result.durationMs < 18_000, `${name} must finish before the client maximum wait.`);
+            assert.equal(result.payload.requiresTopic, false, `${name} must not use static Wikidata topics.`);
+            assert.ok(Array.isArray(result.payload.sourceStatus), `${name} must expose source status.`);
+            const nlm = result.payload.sourceStatus.find((item) => item.source === 'nlm-open-i');
+            assert.ok(nlm, `${name} must include NLM Open-i status.`);
+            assert.ok(nlm.ok || nlm.skipped, `${name} must either use or softly skip NLM Open-i.`);
+            if (nlm.skipped) assert.match(nlm.message || '', /showing other sources/i);
+          }
 
-          assert.equal(ambiguity.status, 200);
-          assert.equal(ambiguity.payload.requiresTopic, true);
-          assert.ok(ambiguity.payload.topics.some((topic) => topic.id === 'nutrition-metabolism'));
-          assert.equal(nutritionTopic?.id, 'nutrition-metabolism');
+          const heartWikimedia = heartInitial.payload.sourceStatus.find((item) => item.source === 'wikimedia');
+          assert.ok(heartWikimedia?.ok && heartWikimedia.count > 0, 'Wikimedia must return broad Heart results.');
+          assert.ok(heartInitial.payload.poolResultCount > 0, 'Heart broad pool must contain images.');
+          assert.ok(heartSelected.payload.resultCount > 0, 'A generated Heart keyword must not dead-end.');
+          assert.ok(glycineInitial.payload.poolResultCount > 0, 'Glycine broad pool must contain images.');
+          assert.ok(glycineSelected.payload.resultCount > 0, 'A generated glycine keyword must not dead-end.');
 
-          assert.equal(nutrition.status, 200);
-          assert.equal(nutrition.payload.requiresTopic, false);
-          assert.ok(nutrition.durationMs < 20_000, 'Nutrition search must not leave the UI spinning.');
-          const nutritionSource = (name) => nutrition.payload.sourceStatus.find((item) => item.source === name);
-          assert.ok(nutritionSource('wikimedia')?.ok, 'Wikimedia must complete for glycine metabolism.');
-          assert.ok(nutritionSource('wikimedia')?.count > 0, 'Wikimedia must recover or directly return glycine images.');
-          const nutritionNlm = nutritionSource('nlm-open-i');
-          assert.ok(nutritionNlm, 'NLM Open-i status must be present.');
-          assert.ok(
-            nutritionNlm.ok || nutritionNlm.skipped,
-            'NLM Open-i must either return results or expose a soft skipped-provider state.'
-          );
-          if (nutritionNlm.skipped) assert.match(nutritionNlm.message || '', /showing other sources/i);
-          if (nutritionNlm.timedOut) assert.match(nutritionNlm.message || '', /timed out/i);
+          if (heartInitial.payload.requiresKeyword) {
+            assert.ok(heartInitial.payload.keywordOptions.length >= 2);
+            assert.ok(!heartInitial.payload.keywordOptions.some((item) => item.keyword === 'human' && Number(item.overlapRatio || 0) > 0.75), 'Generic high-overlap Human should not be offered.');
+          }
+          if (heartKeyword) {
+            assert.ok(heartSelected.payload.keywordOptions.some((item) => item.keyword === heartKeyword.keyword), 'Selected keyword must remain in the option set.');
+          }
           NODE
 
       - name: Upload adaptive diagnostic JSON
