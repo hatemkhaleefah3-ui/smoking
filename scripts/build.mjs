@@ -18,9 +18,9 @@ import './generate-deployment-metadata.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 const files = [
-  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'icon-scroll-system.css', 'studio-rebuild.css', 'studio-refinements.css',
+  'index.html', 'styles.css', 'legacy-styles.css', 'studio-shell.css', 'icon-scroll-system.css', 'studio-rebuild.css', 'studio-refinements.css', 'adaptive-image-search.css',
   'image-import.css', 'pdf-image-autofill.css', 'image-candidate-carousel.css', 'pdf-extractor.css',
-  'app.js', 'site-shell.js', 'studio-integration.js', 'icon-scroll-system.js', 'studio-refinements.js',
+  'app.js', 'site-shell.js', 'studio-integration.js', 'icon-scroll-system.js', 'studio-refinements.js', 'adaptive-image-search.js',
   'image-import.js', 'pdf-image-autofill.js', 'image-candidate-carousel.js', 'pdf-extractor.js',
   'media-search-runtime-release.js',
   'lecture-renderer.js', 'clinical-v2-adapter.js',
