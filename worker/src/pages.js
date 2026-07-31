@@ -11,6 +11,7 @@ import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisourc
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
 import { handleImageSearchRequest, imageSearchErrorResponse } from './image-search.js';
+import { applyOpenverseImageSafety } from './image-search-openverse-safety.js';
 
 export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.7-provider-text-fallback';
 
@@ -67,7 +68,9 @@ export default {
 
     try {
       const adaptiveImageSearchResponse = await handleImageSearchRequest(request, env, url);
-      if (adaptiveImageSearchResponse) return adaptiveImageSearchResponse;
+      if (adaptiveImageSearchResponse) {
+        return await applyOpenverseImageSafety(adaptiveImageSearchResponse);
+      }
     } catch (error) {
       return imageSearchErrorResponse(error);
     }
