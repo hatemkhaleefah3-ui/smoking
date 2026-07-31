@@ -1,0 +1,438 @@
+/* Focused interface refinements requested after the responsive rebuild. */
+
+/* Remove the redundant standalone home/brand control above the page. */
+.topbar {
+  display: none !important;
+}
+
+/* Home: one intentional action instead of maker/search shortcuts. */
+.hero-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  margin-top: 12px !important;
+}
+.home-know-more {
+  min-width: 154px !important;
+  width: auto !important;
+  max-width: none !important;
+  padding-inline: 28px !important;
+  border-radius: 999px !important;
+  color: #fff !important;
+  background: linear-gradient(135deg, #2563eb, #0ea5e9) !important;
+  box-shadow: 0 16px 36px rgba(37, 99, 235, .25) !important;
+}
+.home-know-more:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 20px 42px rgba(37, 99, 235, .3) !important;
+}
+
+/* Replace the two empty circles with a compact amino-acid pathway figure. */
+.preview-visual {
+  position: relative !important;
+  min-height: 190px !important;
+  display: grid !important;
+  grid-template-columns: 1fr auto 1fr !important;
+  align-items: center !important;
+  gap: 18px !important;
+  padding: 28px !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(37, 99, 235, .13) !important;
+  border-radius: 24px !important;
+  background:
+    radial-gradient(circle at 16% 18%, rgba(14,165,233,.13), transparent 8rem),
+    linear-gradient(145deg, #f8fbff, #edf5ff) !important;
+}
+.preview-visual::before {
+  position: absolute;
+  inset: 18px auto auto 22px;
+  content: "AMINO-ACID CONVERSION";
+  color: #50709e;
+  font-size: .57rem;
+  font-weight: 900;
+  letter-spacing: .13em;
+}
+.preview-visual .molecule {
+  position: relative !important;
+  inset: auto !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 82px !important;
+  display: grid !important;
+  padding: 18px 14px !important;
+  place-items: center !important;
+  border: 1px solid rgba(37,99,235,.18) !important;
+  border-radius: 18px !important;
+  color: #10213d !important;
+  background: #fff !important;
+  box-shadow: 0 12px 26px rgba(37,72,135,.1) !important;
+  transform: none !important;
+}
+.preview-visual .molecule::after {
+  color: #2563eb;
+  font-size: .8rem;
+  font-weight: 900;
+  letter-spacing: -.02em;
+}
+.preview-visual .molecule-a::after { content: "NH₂—CH₂—COOH"; }
+.preview-visual .molecule-b::after { content: "CO₂ + ENERGY"; }
+.preview-visual .molecule::before {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  color: #7b8ba3;
+  font-size: .48rem;
+  font-weight: 800;
+  letter-spacing: .1em;
+}
+.preview-visual .molecule-a::before { content: "GLYCINE"; }
+.preview-visual .molecule-b::before { content: "OXIDATION"; }
+.preview-visual .path-line {
+  position: relative !important;
+  inset: auto !important;
+  width: 54px !important;
+  height: 2px !important;
+  border-radius: 999px !important;
+  background: #2563eb !important;
+  transform: none !important;
+}
+.preview-visual .path-line::after {
+  position: absolute;
+  top: 50%;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  content: "";
+  border-top: 2px solid #2563eb;
+  border-right: 2px solid #2563eb;
+  transform: translateY(-50%) rotate(45deg);
+}
+
+/* Navigation: equal cells remain, but active state is a floating circular marker. */
+.app-navigation > a,
+body > .primary-nav > a {
+  position: relative !important;
+  isolation: isolate;
+  color: #73829a !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.app-navigation > a::before,
+body > .primary-nav > a::before {
+  position: absolute !important;
+  z-index: -1 !important;
+  width: 48px !important;
+  height: 48px !important;
+  display: block !important;
+  content: "" !important;
+  border-radius: 50% !important;
+  opacity: 0 !important;
+  background: linear-gradient(145deg, #2563eb, #0ea5e9) !important;
+  box-shadow: 0 12px 24px rgba(37,99,235,.28) !important;
+  transform: scale(.72) !important;
+  transition: opacity .18s ease, transform .18s ease !important;
+}
+.app-navigation > a.is-active,
+body > .primary-nav > a.is-active {
+  color: #fff !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.app-navigation > a.is-active::before,
+body > .primary-nav > a.is-active::before {
+  opacity: 1 !important;
+  transform: scale(1) !important;
+}
+.app-navigation > a.is-active::after,
+body > .primary-nav > a.is-active::after {
+  position: absolute;
+  bottom: 3px;
+  width: 5px;
+  height: 5px;
+  content: "";
+  border-radius: 50%;
+  background: #93c5fd;
+}
+
+/* Search: one large, clear command field with a compact submit control. */
+.search-workspace {
+  overflow: hidden !important;
+  padding: clamp(24px, 4vw, 48px) !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(14,165,233,.11), transparent 24rem),
+    #fff !important;
+}
+.search-workspace-copy {
+  max-width: 760px !important;
+  margin-bottom: 28px !important;
+}
+.media-search-form {
+  display: grid !important;
+  gap: 12px !important;
+}
+.media-search-form > label {
+  color: #24426f !important;
+  font-size: .78rem !important;
+  font-weight: 850 !important;
+  letter-spacing: .04em !important;
+}
+.search-input-wrap {
+  min-height: 78px !important;
+  display: grid !important;
+  grid-template-columns: 52px minmax(0,1fr) 58px !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 9px !important;
+  border: 1px solid rgba(37,99,235,.2) !important;
+  border-radius: 24px !important;
+  background: #f7faff !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.8), 0 16px 36px rgba(37,72,135,.09) !important;
+}
+.search-input-wrap:focus-within {
+  border-color: #2563eb !important;
+  box-shadow: 0 0 0 4px rgba(37,99,235,.11), 0 18px 40px rgba(37,72,135,.12) !important;
+}
+.search-input-wrap > span[aria-hidden="true"] {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: #e8f1ff;
+}
+.search-input-wrap > span[aria-hidden="true"]::before {
+  width: 17px;
+  height: 17px;
+  content: "";
+  border: 2px solid #2563eb;
+  border-radius: 50%;
+}
+.search-input-wrap > span[aria-hidden="true"]::after {
+  position: absolute;
+  width: 8px;
+  height: 2px;
+  content: "";
+  border-radius: 999px;
+  background: #2563eb;
+  transform: translate(9px, 9px) rotate(45deg);
+}
+.media-search-input {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 56px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  outline: 0 !important;
+  color: #10213d !important;
+  background: transparent !important;
+  font-size: clamp(1rem, 2vw, 1.13rem) !important;
+}
+.media-search-input::placeholder { color: #91a0b6 !important; }
+#media-search-button {
+  --icon-control-size: 54px !important;
+  width: 54px !important;
+  min-width: 54px !important;
+  height: 54px !important;
+  border-radius: 18px !important;
+  color: #fff !important;
+  background: linear-gradient(145deg, #2563eb, #0ea5e9) !important;
+}
+.search-suggestions {
+  margin-top: 16px !important;
+  padding-bottom: 6px !important;
+}
+.search-suggestions > button {
+  min-width: max-content !important;
+  width: auto !important;
+  max-width: none !important;
+  height: 42px !important;
+  padding: 0 16px !important;
+  border: 1px solid rgba(37,99,235,.14) !important;
+  border-radius: 999px !important;
+  color: #31558f !important;
+  background: #f4f8ff !important;
+}
+
+/* Extractor: PDF first, optional visual targeting below, action last. */
+.pdf-extractor-grid[data-slide-track="true"],
+.pdf-extractor-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) !important;
+  overflow: visible !important;
+  gap: 20px !important;
+}
+.pdf-extractor-grid[data-slide-track="true"] > *,
+.pdf-extractor-grid > * {
+  width: 100% !important;
+  max-width: none !important;
+  flex-basis: auto !important;
+}
+.pdf-selector-panel {
+  padding: clamp(22px, 3vw, 34px) !important;
+  border-radius: 26px !important;
+  background: #f8fbff !important;
+}
+.selector-heading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+}
+.selector-heading > span {
+  padding: 7px 11px !important;
+  border-radius: 999px !important;
+  color: #1d4ed8 !important;
+  background: #dbeafe !important;
+  font-size: .7rem !important;
+  font-weight: 900 !important;
+  letter-spacing: .06em !important;
+  text-transform: uppercase !important;
+}
+.pdf-target-count-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) minmax(140px, 220px);
+  align-items: center;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid rgba(37,99,235,.13);
+  border-radius: 20px;
+  background: #fff;
+}
+.pdf-target-count-row label {
+  display: grid;
+  gap: 4px;
+  color: #18345f;
+  font-weight: 850;
+}
+.pdf-target-count-row label small {
+  color: #76859c;
+  font-weight: 600;
+}
+#pdf-target-count {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 42px 0 16px;
+  border: 1px solid rgba(37,99,235,.2);
+  border-radius: 16px;
+  color: #15325f;
+  background: #f4f8ff;
+  font-weight: 850;
+}
+.pdf-image-targets {
+  display: flex;
+  width: 100%;
+  margin-top: 20px;
+  padding: 2px 2px 14px;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(37,99,235,.4) transparent;
+}
+.pdf-image-target-card {
+  flex: 0 0 min(520px, 88vw);
+  padding: 22px;
+  border: 1px solid rgba(37,99,235,.13);
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(37,72,135,.07);
+  scroll-snap-align: start;
+}
+.pdf-image-target-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.pdf-image-target-card header strong { color: #10213d; }
+.pdf-image-target-card header span {
+  color: #2563eb;
+  font-size: .72rem;
+  font-weight: 900;
+}
+.pdf-target-option-group + .pdf-target-option-group { margin-top: 18px; }
+.pdf-target-option-group > strong {
+  display: block;
+  margin-bottom: 9px;
+  color: #40577c;
+  font-size: .76rem;
+}
+.pdf-number-rail {
+  display: flex;
+  width: 100%;
+  padding: 2px 1px 8px;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+}
+.pdf-number-choice {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(37,99,235,.16);
+  border-radius: 14px;
+  color: #536986;
+  background: #f6f9ff;
+  font-weight: 850;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+.pdf-number-choice.is-selected {
+  color: #fff;
+  border-color: #2563eb;
+  background: #2563eb;
+  box-shadow: 0 8px 18px rgba(37,99,235,.22);
+}
+.pdf-action-row {
+  margin-top: 22px !important;
+}
+
+@media (max-width: 767px) {
+  .hero-actions { justify-content: center !important; }
+  .home-know-more { min-width: 168px !important; }
+  .preview-visual {
+    min-height: 230px !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding-top: 42px !important;
+  }
+  .preview-visual .path-line {
+    width: 2px !important;
+    height: 32px !important;
+    justify-self: center !important;
+  }
+  .preview-visual .path-line::after {
+    top: auto;
+    right: 50%;
+    bottom: -2px;
+    transform: translateX(50%) rotate(135deg);
+  }
+  .app-navigation > a.is-active::after,
+  body > .primary-nav > a.is-active::after { bottom: 4px; }
+  .search-input-wrap {
+    min-height: 68px !important;
+    grid-template-columns: 44px minmax(0,1fr) 50px !important;
+    border-radius: 20px !important;
+  }
+  .search-input-wrap > span[aria-hidden="true"] {
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+  }
+  #media-search-button {
+    --icon-control-size: 48px !important;
+    width: 48px !important;
+    min-width: 48px !important;
+    height: 48px !important;
+    border-radius: 15px !important;
+  }
+  .pdf-target-count-row {
+    grid-template-columns: 1fr;
+  }
+  .pdf-image-target-card {
+    flex-basis: calc(100vw - 58px);
+    padding: 18px;
+  }
+}
