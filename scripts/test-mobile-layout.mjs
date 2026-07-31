@@ -2,12 +2,16 @@ import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 
 const css = await readFile(new URL('../dist/studio-rebuild.css', import.meta.url), 'utf8');
+const refinements = await readFile(new URL('../dist/studio-refinements.css', import.meta.url), 'utf8');
+const refinementController = await readFile(new URL('../dist/studio-refinements.js', import.meta.url), 'utf8');
+const extractor = await readFile(new URL('../dist/pdf-extractor.js', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../dist/styles.css', import.meta.url), 'utf8');
 const shell = await readFile(new URL('../dist/site-shell.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
 
 assert.match(html, /viewport-fit=cover/);
 assert.match(styles, /studio-rebuild\.css/);
+assert.match(styles, /studio-refinements\.css/);
 assert.doesNotMatch(styles, /mobile-studio\.css/);
 assert.doesNotMatch(styles, /mobile-bottom-nav\.css/);
 assert.doesNotMatch(styles, /responsive-blue-studio\.css/);
@@ -16,6 +20,7 @@ assert.doesNotMatch(styles, /responsive-blue-studio\.css/);
 assert.match(shell, /primaryNav\.classList\.add\('app-navigation'\)/);
 assert.match(shell, /document\.body\.insertBefore\(primaryNav, appMain\)/);
 assert.match(shell, /data-root-navigation/);
+assert.match(shell, /studio-refinements\.js/);
 
 // New blue/light product language.
 assert.match(css, /--studio-accent:\s*#2563eb/i);
@@ -47,5 +52,27 @@ assert.match(css, /padding:\s*0 8px env\(safe-area-inset-bottom\)/);
 assert.match(css, /border-radius:\s*22px 22px 0 0\s*!important/);
 assert.match(css, /place-items:\s*center\s*!important/);
 
+// Requested refinement pass.
+assert.match(refinements, /\.topbar\s*\{\s*display:\s*none\s*!important/);
+assert.match(refinementController, /home-know-more/);
+assert.match(refinementController, /Know more/);
+assert.match(refinements, /AMINO-ACID CONVERSION/);
+assert.match(refinements, /NH₂—CH₂—COOH/);
+assert.match(refinements, /\.app-navigation > a\.is-active::before/);
+assert.match(refinements, /\.search-input-wrap:focus-within/);
+assert.match(refinements, /grid-template-columns:\s*52px minmax\(0,1fr\) 58px/);
+
+// Extractor uses visual targeting controls instead of a visible JSON editor.
+assert.match(extractor, /MAX_TARGET_IMAGES/);
+assert.match(extractor, /id="pdf-target-count"/);
+assert.match(extractor, /pdf-image-target-card/);
+assert.match(extractor, /data-target-field="page"/);
+assert.match(extractor, /data-target-field="position"/);
+assert.match(extractor, /JSON\.stringify\(\{ images \}\)/);
+assert.match(refinements, /\.pdf-image-targets/);
+assert.match(refinements, /scroll-snap-type:\s*x mandatory/);
+
 await access(new URL('../dist/studio-rebuild.css', import.meta.url));
-console.log('Rebuilt laptop, iPad and true-bottom mobile layout validation passed.');
+await access(new URL('../dist/studio-refinements.css', import.meta.url));
+await access(new URL('../dist/studio-refinements.js', import.meta.url));
+console.log('Rebuilt device layouts and requested UI refinements validation passed.');
