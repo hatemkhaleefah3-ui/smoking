@@ -66,7 +66,7 @@ jobs:
 
           const ambiguity = await post({ query: 'glycine', debug: true, retry: true });
           const selectedTopic = Array.isArray(ambiguity.payload?.topics)
-            ? ambiguity.payload.topics[0] || null
+            ? ambiguity.payload.topics.find((topic) => topic.id === 'medical-neurological') || null
             : null;
           const providers = await post({
             query: 'glycine',
@@ -102,9 +102,14 @@ jobs:
 
           assert.equal(ambiguity.status, 200);
           assert.equal(ambiguity.payload.requiresTopic, true, 'glycine should return topic choices');
-          assert.ok(Array.isArray(ambiguity.payload.topics) && ambiguity.payload.topics.length >= 2);
+          assert.ok(Array.isArray(ambiguity.payload.topics) && ambiguity.payload.topics.length >= 4);
+          assert.ok(ambiguity.payload.topics.some((topic) => topic.id === 'chemical-structure'));
+          assert.ok(ambiguity.payload.topics.some((topic) => topic.id === 'medical-neurological'));
+          assert.ok(ambiguity.payload.topics.some((topic) => topic.id === 'nutrition-metabolism'));
+          assert.ok(ambiguity.payload.topics.some((topic) => topic.id === 'botany'));
           assert.ok(Array.isArray(ambiguity.payload.debugDiagnostics?.wikidata));
           assert.ok(ambiguity.payload.debugDiagnostics.wikidata.every((item) => item.status === 200));
+          assert.equal(selectedTopic?.id, 'medical-neurological');
 
           assert.equal(providers.status, 200);
           assert.equal(providers.payload.requiresTopic, false);
@@ -117,11 +122,15 @@ jobs:
           assert.ok(source('openverse'), 'Openverse status is required');
           assert.ok(source('nlm-open-i')?.ok, 'NLM Open-i should succeed');
           assert.ok(source('nlm-open-i')?.count > 0, 'NLM Open-i should return images');
+          assert.equal(source('nlm-open-i')?.fallbackUsed, true);
+          assert.equal(source('nlm-open-i')?.fallbackQuery, 'glycine');
+          assert.equal(source('nlm-open-i')?.topicQueryCount, 0);
 
           const nlmResults = providers.payload.results.filter((item) => item.source === 'nlm-open-i');
           assert.ok(nlmResults.length > 0);
           assert.ok(nlmResults.every((item) => item.imageUrl !== 'https://openi.nlm.nih.gov/'));
           assert.ok(nlmResults.every((item) => /\/imgs\//.test(item.imageUrl)));
+          assert.ok(providers.payload.debugDiagnostics.providers.some((item) => item.stage === 'base-query-fallback'));
           NODE
 
       - name: Upload adaptive diagnostic JSON
