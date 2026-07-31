@@ -1,9 +1,9 @@
 import {
   handleImageSearchRequest,
   ensureImageFeedbackSchema,
-  imageSearchErrorResponse as dataDrivenErrorResponse,
+  imageSearchErrorResponse as adaptiveErrorResponse,
   rankResults
-} from './image-search-data-driven.js';
+} from './image-search-distinctiveness.js';
 
 export { handleImageSearchRequest, ensureImageFeedbackSchema, rankResults };
 
@@ -21,5 +21,5 @@ export function imageSearchErrorResponse(error) {
       }
     );
   }
-  return dataDrivenErrorResponse(error);
+  return adaptiveErrorResponse(error);
 }
