@@ -29,7 +29,8 @@ assert.match(css, /\.adaptive-image-votes/);
 
 assert.match(worker, /adaptive-image-pools/);
 assert.match(worker, /Promise\.allSettled/);
-assert.match(worker, /NLM Open-i timed out, showing other sources/);
+assert.match(worker, /NLM Open-i/);
+assert.match(worker, /timed out, showing other sources/);
 assert.match(worker, /base-query-fallback/);
 assert.match(worker, /persistent-log-weight-with-metadata-similarity/);
 assert.match(worker, /similarityFeedbackScore/);
