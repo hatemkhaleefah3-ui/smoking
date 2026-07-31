@@ -45,7 +45,7 @@ try {
   assert.equal(initial.requiresKeyword, true);
   assert.equal(initial.poolResultCount, 7);
   assert.ok(initial.keywordOptions.length >= 3);
-  assert.ok(initial.keywordOptions.some((item) => item.keyword === 'structur'));
+  assert.ok(initial.keywordOptions.some((item) => item.keyword === 'structure'));
   assert.ok(initial.keywordOptions.some((item) => item.keyword === 'physiology' || item.keyword === 'physiolog'));
   assert.ok(initial.keywordOptions.some((item) => item.keyword === 'valve'));
   assert.ok(!initial.keywordOptions.some((item) => item.keyword === 'human'), 'Generic high-overlap “human” must be removed.');
@@ -62,10 +62,10 @@ try {
   assert.equal(physiologyPayload.resultCount, 2);
   assert.equal(physiologyPayload.filter.fallbackUsed, true);
   assert.equal(physiologyPayload.filter.mode, 'title-caption');
-  assert.ok(physiologyPayload.keywordOptions.some((item) => item.keyword === 'structur'), 'Other overlapping options must remain visible.');
+  assert.ok(physiologyPayload.keywordOptions.some((item) => item.keyword === 'structure'), 'Other overlapping options must remain visible.');
   assert.ok(physiologyPayload.results.every((item) => /physiology/i.test(`${item.title} ${item.caption}`)));
 
-  const structure = initial.keywordOptions.find((item) => item.keyword === 'structur');
+  const structure = initial.keywordOptions.find((item) => item.keyword === 'structure');
   const valve = initial.keywordOptions.find((item) => item.keyword === 'valve');
   const structureBefore = await jsonOf(handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: structure }), env));
   assert.equal(structureBefore.resultCount, 3);
