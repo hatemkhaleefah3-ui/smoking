@@ -173,12 +173,29 @@
 
     const figure = document.createElement('figure');
     const image = document.createElement('img');
-    image.src = result.imageUrl;
+    const primaryUrl = String(result.imageUrl || '');
+    const fallbackUrl = result.source === 'openverse'
+      && String(result.thumbnailUrl || '')
+      && String(result.thumbnailUrl) !== primaryUrl
+      ? String(result.thumbnailUrl)
+      : '';
+    image.src = primaryUrl;
     image.alt = result.caption || result.title || `${result.sourceLabel || 'Search'} result`;
     image.loading = 'lazy';
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
-    image.addEventListener('error', () => card.classList.add('has-image-error'), { once: true });
+    if (fallbackUrl) image.dataset.fallbackUrl = fallbackUrl;
+    image.addEventListener('load', () => card.classList.remove('has-image-error'));
+    image.addEventListener('error', () => {
+      const fallback = image.dataset.fallbackUrl || '';
+      if (fallback && image.dataset.fallbackAttempted !== 'true') {
+        image.dataset.fallbackAttempted = 'true';
+        card.classList.remove('has-image-error');
+        image.src = fallback;
+        return;
+      }
+      card.classList.add('has-image-error');
+    });
     figure.append(image);
 
     const source = document.createElement('span');
