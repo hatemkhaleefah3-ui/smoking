@@ -10,6 +10,7 @@ import { handleMultiSourceMediaSearchV4 } from './media-search-multisource-v4.js
 import { handleMultiSourceMediaSearchV4Runtime } from './media-search-multisource-v4-runtime.generated.js';
 import { handleLiveMediaDiagnostics } from './live-media-diagnostics.js';
 import { handlePdfExtractionRequest } from './pdf-routes.js';
+import { handleImageSearchRequest, imageSearchErrorResponse } from './image-search.js';
 
 export const MEDIA_SEARCH_RUNTIME_RELEASE = 'v4.7-provider-text-fallback';
 
@@ -63,6 +64,14 @@ export default {
       MEDIA_SEARCH_RUNTIME_RELEASE
     );
     if (diagnosticResponse) return diagnosticResponse;
+
+    try {
+      const adaptiveImageSearchResponse = await handleImageSearchRequest(request, env, url);
+      if (adaptiveImageSearchResponse) return adaptiveImageSearchResponse;
+    } catch (error) {
+      return imageSearchErrorResponse(error);
+    }
+
     if (url.pathname === '/api/search' || url.pathname === '/api/search/') {
       return routeMediaSearch(request, env);
     }
