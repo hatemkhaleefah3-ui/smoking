@@ -5,6 +5,7 @@
   if (!existingSearchForm || document.querySelector('#adaptive-image-search')) return;
 
   const SESSION_DOWNVOTES_KEY = 'lecture-studio:image-search-downvotes';
+  const DEBUG_MODE = new URLSearchParams(window.location.search).has('imageSearchDebug');
   const panel = document.createElement('section');
   panel.id = 'adaptive-image-search';
   panel.className = 'adaptive-image-search panel';
@@ -93,15 +94,21 @@
           query: state.query,
           topic,
           retry: Boolean(retry),
-          excludeUrls: [...state.downvotedUrls]
+          debug: DEBUG_MODE,
+          excludeUrls: retry ? [...state.downvotedUrls] : []
         })
       });
       const payload = await readJsonResponse(response);
+      if (DEBUG_MODE) console.info('[adaptive-image-search] raw API response', payload);
       if (!response.ok) throw new Error(payload.error || `Image search failed with status ${response.status}.`);
 
-      if (payload.requiresTopic) {
+      if (payload.requiresTopic === true) {
+        const topics = Array.isArray(payload.topics) ? payload.topics : [];
         state.topic = null;
-        renderTopicChoices(payload.topics || []);
+        if (!topics.length) throw new Error('Wikidata requested topic selection but returned no topic choices.');
+        renderTopicChoices(topics);
+        elements.topicPanel.hidden = false;
+        elements.topicPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         setStatus('Choose a topic before the image APIs are searched.', 'neutral');
         return;
       }
@@ -154,7 +161,11 @@
       chip.textContent = item.ok
         ? `${sourceLabel(item.source)} · ${Number(item.count || 0)}`
         : `${sourceLabel(item.source)} unavailable`;
-      chip.title = item.error || '';
+      chip.title = [
+        item.error || '',
+        item.status != null ? `HTTP ${item.status}` : '',
+        item.requestUrl || ''
+      ].filter(Boolean).join(' · ');
       elements.sourceStatus.append(chip);
     }
     elements.sourceStatus.hidden = !elements.sourceStatus.childElementCount;
@@ -170,6 +181,8 @@
     const card = document.createElement('article');
     card.className = 'adaptive-image-card';
     card.dataset.imageUrl = result.imageUrl || '';
+    card.dataset.feedbackScore = String(Number(result.feedbackScore || 0));
+    card.dataset.providerRank = String(Number(result.providerRank || 0));
 
     const figure = document.createElement('figure');
     const image = document.createElement('img');
@@ -203,12 +216,11 @@
     source.textContent = result.sourceLabel || sourceLabel(result.source);
     figure.append(source);
 
-    if (Number(result.feedbackScore || 0) > 0) {
-      const learned = document.createElement('span');
-      learned.className = 'adaptive-image-learned';
-      learned.textContent = `+${result.feedbackScore} feedback`;
-      figure.append(learned);
-    }
+    const feedbackBadge = document.createElement('span');
+    feedbackBadge.className = 'adaptive-image-learned';
+    feedbackBadge.dataset.feedbackBadge = 'true';
+    figure.append(feedbackBadge);
+    updateFeedbackBadge(card, feedbackBadge);
 
     const body = document.createElement('div');
     body.className = 'adaptive-image-card-body';
@@ -292,21 +304,38 @@
       card.dataset.voted = String(rating);
       card.classList.add(rating > 0 ? 'is-upvoted' : 'is-downvoted');
       card.querySelectorAll('.adaptive-vote-button').forEach((control) => { control.disabled = true; });
+      result.feedbackScore = Number(result.feedbackScore || 0) + rating;
+      card.dataset.feedbackScore = String(result.feedbackScore);
+      updateFeedbackBadge(card, card.querySelector('[data-feedback-badge]'));
 
       if (rating < 0) {
         state.downvotedUrls.add(result.imageUrl);
         saveSessionDownvotes();
-        window.setTimeout(() => {
-          card.remove();
-          if (!elements.results.childElementCount) elements.results.hidden = true;
-        }, 260);
       }
+      resortRenderedCards();
+      setStatus(`Feedback saved. This result now has a net score of ${result.feedbackScore}.`, 'success');
     } catch (error) {
       button.disabled = false;
       setStatus(error.message || 'Feedback could not be saved.', 'error');
     } finally {
       state.voting.delete(key);
     }
+  }
+
+  function updateFeedbackBadge(card, badge) {
+    if (!badge) return;
+    const score = Number(card.dataset.feedbackScore || 0);
+    badge.hidden = score === 0;
+    badge.textContent = score > 0 ? `+${score} feedback` : `${score} feedback`;
+  }
+
+  function resortRenderedCards() {
+    const cards = [...elements.results.querySelectorAll('.adaptive-image-card')];
+    cards.sort((a, b) =>
+      Number(b.dataset.feedbackScore || 0) - Number(a.dataset.feedbackScore || 0)
+      || Number(a.dataset.providerRank || 0) - Number(b.dataset.providerRank || 0)
+    );
+    for (const card of cards) elements.results.append(card);
   }
 
   function metadataItem(label, value) {
