@@ -37,6 +37,8 @@ assert.match(worker, /genericDropped/);
 assert.match(worker, /same-sentence/);
 assert.match(worker, /same-caption/);
 assert.match(worker, /title-caption/);
+assert.match(worker, /OPENVERSE_RESULT_LIMIT = 20/);
+assert.match(worker, /page_size["']?, String\(OPENVERSE_RESULT_LIMIT\)/);
 assert.doesNotMatch(worker, /negativeRemovalThreshold:\s*-3/);
 
 assert.match(feedbackMigration, /CREATE TABLE IF NOT EXISTS image_feedback/);
