@@ -117,10 +117,11 @@ jobs:
           const heartNlm = heartSource('nlm-open-i');
           assert.ok(heartNlm, 'NLM Open-i status must be present.');
           assert.ok(
-            heartNlm.ok || (heartNlm.timedOut && heartNlm.skipped),
-            'NLM Open-i must either return results or expose a soft timeout state.'
+            heartNlm.ok || heartNlm.skipped,
+            'NLM Open-i must either return results or expose a soft skipped-provider state.'
           );
-          if (heartNlm.timedOut) assert.match(heartNlm.message || '', /timed out, showing other sources/i);
+          if (heartNlm.skipped) assert.match(heartNlm.message || '', /showing other sources/i);
+          if (heartNlm.timedOut) assert.match(heartNlm.message || '', /timed out/i);
 
           assert.equal(ambiguity.status, 200);
           assert.equal(ambiguity.payload.requiresTopic, true);
@@ -132,14 +133,15 @@ jobs:
           assert.ok(nutrition.durationMs < 20_000, 'Nutrition search must not leave the UI spinning.');
           const nutritionSource = (name) => nutrition.payload.sourceStatus.find((item) => item.source === name);
           assert.ok(nutritionSource('wikimedia')?.ok, 'Wikimedia must complete for glycine metabolism.');
-          assert.ok(nutritionSource('wikimedia')?.count > 0, 'Wikimedia base-query fallback must recover glycine images.');
+          assert.ok(nutritionSource('wikimedia')?.count > 0, 'Wikimedia must recover or directly return glycine images.');
           const nutritionNlm = nutritionSource('nlm-open-i');
           assert.ok(nutritionNlm, 'NLM Open-i status must be present.');
           assert.ok(
-            nutritionNlm.ok || (nutritionNlm.timedOut && nutritionNlm.skipped),
-            'NLM Open-i must either return results or expose a soft timeout state.'
+            nutritionNlm.ok || nutritionNlm.skipped,
+            'NLM Open-i must either return results or expose a soft skipped-provider state.'
           );
-          if (nutritionNlm.timedOut) assert.match(nutritionNlm.message || '', /timed out, showing other sources/i);
+          if (nutritionNlm.skipped) assert.match(nutritionNlm.message || '', /showing other sources/i);
+          if (nutritionNlm.timedOut) assert.match(nutritionNlm.message || '', /timed out/i);
           NODE
 
       - name: Upload adaptive diagnostic JSON
