@@ -6,6 +6,7 @@ const WIKIMEDIA_TIMEOUT_MS = 5_000;
 const OPENVERSE_TIMEOUT_MS = 6_000;
 const OPEN_I_TIMEOUT_MS = 4_500;
 const DEBUG_BODY_LIMIT = 50_000;
+const RAW_BODY_PREVIEW_LENGTH = 500;
 
 export async function searchProviderPool({ query, suffix = '', debug = false }) {
   const baseQuery = normalizeText(query, 160);
@@ -35,11 +36,28 @@ export async function searchProviderPool({ query, suffix = '', debug = false }) 
     sourceStatus.push(softFailureStatus(source, outcome.reason));
   });
 
+  const dedupedResults = dedupeResults(results);
+  const pipelineCounts = {
+    rawByProvider: Object.fromEntries(sourceStatus.map((item) => [item.source, Number(item.rawCount || 0)])),
+    afterProviderFilteringByProvider: Object.fromEntries(sourceStatus.map((item) => [item.source, Number(item.afterProviderFilterCount ?? item.count ?? 0)])),
+    beforeCrossProviderDedup: results.length,
+    afterCrossProviderDedup: dedupedResults.length
+  };
+
+  console.log(JSON.stringify({
+    event: 'adaptive_image_provider_diagnostics',
+    query: baseQuery,
+    externalQuery: combinedQuery,
+    pipelineCounts,
+    providers: diagnostics.map(compactDiagnosticForLog)
+  }));
+
   return {
     query: baseQuery,
     externalQuery: combinedQuery,
-    results: dedupeResults(results),
+    results: dedupedResults,
     sourceStatus,
+    pipelineCounts,
     diagnostics: debug ? diagnostics : undefined
   };
 }
@@ -47,14 +65,21 @@ export async function searchProviderPool({ query, suffix = '', debug = false }) 
 async function runProvider(source, runner) {
   try {
     const value = await runner();
+    const results = Array.isArray(value.results) ? value.results : [];
+    const status = value.status || {};
     return {
-      results: Array.isArray(value.results) ? value.results : [],
+      results,
       status: {
         source,
         ok: true,
-        count: Array.isArray(value.results) ? value.results.length : 0,
+        count: results.length,
+        rawCount: Number(status.rawCount ?? results.length),
+        afterProviderFilterCount: Number(status.afterProviderFilterCount ?? results.length),
         timedOut: false,
-        ...(value.status || {})
+        skipped: false,
+        failureType: null,
+        fetchThrew: false,
+        ...status
       }
     };
   } catch (error) {
@@ -64,34 +89,66 @@ async function runProvider(source, runner) {
 
 function softFailureStatus(source, error) {
   const diagnostic = error?.diagnostic || {};
-  const timedOut = Boolean(error?.timedOut || diagnostic?.timedOut || error?.name === 'AbortError');
-  const message = source === 'nlm-open-i'
-    ? timedOut
-      ? 'NLM Open-i timed out, showing other sources.'
-      : 'NLM Open-i could not be reached; showing other sources.'
-    : `${sourceLabel(source)} could not be reached; showing other sources.`;
+  const failureType = diagnostic.failureType || classifyFailure(error, diagnostic);
+  const timedOut = failureType === 'timeout';
+  const message = providerFailureMessage(source, failureType, diagnostic);
 
   console.error(JSON.stringify({
     event: 'adaptive_image_provider_skipped',
     source,
+    failureType,
     timedOut,
     message,
-    error: error instanceof Error ? error.message : String(error),
-    diagnostic
+    providerErrorName: error instanceof Error ? error.name : typeof error,
+    providerErrorMessage: error instanceof Error ? error.message : String(error),
+    diagnostic: compactDiagnosticForLog(diagnostic)
   }));
 
   return {
     source,
     ok: false,
     count: 0,
+    rawCount: Number(diagnostic.parsedResultCount || 0),
+    afterProviderFilterCount: Number(diagnostic.afterProviderFilterCount || 0),
     timedOut,
     skipped: true,
+    failureType,
     message,
     error: error instanceof Error ? error.message : String(error),
+    providerErrorName: error instanceof Error ? error.name : typeof error,
+    providerErrorMessage: error instanceof Error ? error.message : String(error),
+    fetchThrew: Boolean(diagnostic.fetchThrew),
+    fetchErrorName: diagnostic.fetchErrorName || null,
+    fetchErrorMessage: diagnostic.fetchErrorMessage || null,
     requestUrl: diagnostic.requestUrl || null,
-    status: diagnostic.status ?? null,
-    responseType: diagnostic.contentType || null
+    status: diagnostic.responseStatus ?? diagnostic.status ?? null,
+    responseOk: diagnostic.responseOk ?? diagnostic.ok ?? false,
+    responseType: diagnostic.contentType || null,
+    rawBodyPreview: diagnostic.rawBodyPreview || ''
   };
+}
+
+function providerFailureMessage(source, failureType, diagnostic) {
+  const label = sourceLabel(source);
+  if (failureType === 'timeout') return `${label} timed out, showing other sources.`;
+  if (failureType === 'network') return `${label}: no response (network/CORS error), showing other sources.`;
+  if (failureType === 'http') {
+    const status = diagnostic.responseStatus ?? diagnostic.status;
+    return `${label} server returned${status == null ? ' an error' : ` HTTP ${status}`}; showing other sources.`;
+  }
+  if (failureType === 'parse') return `${label} returned an unreadable response; showing other sources.`;
+  return `${label} failed for an unexpected reason; showing other sources.`;
+}
+
+function classifyFailure(error, diagnostic) {
+  if (error?.timedOut || diagnostic?.timedOut || error?.name === 'AbortError') return 'timeout';
+  if (diagnostic?.responseStatus != null || diagnostic?.status != null) {
+    if (diagnostic?.failureType === 'parse') return 'parse';
+    return 'http';
+  }
+  const name = diagnostic?.fetchErrorName || (error instanceof Error ? error.name : '');
+  if (name === 'TypeError') return 'network';
+  return 'other';
 }
 
 async function searchWikimedia({ baseQuery, combinedQuery, diagnostics, debug }) {
@@ -110,7 +167,9 @@ async function searchWikimedia({ baseQuery, combinedQuery, diagnostics, debug })
       results: first.results,
       status: statusFromDiagnostic(first.diagnostic, {
         fallbackUsed: false,
-        topicQueryCount
+        topicQueryCount,
+        rawCount: Number(first.diagnostic?.parsedResultCount || 0),
+        afterProviderFilterCount: first.results.length
       })
     };
   }
@@ -121,7 +180,9 @@ async function searchWikimedia({ baseQuery, combinedQuery, diagnostics, debug })
     status: statusFromDiagnostic(fallback.diagnostic, {
       fallbackUsed: true,
       fallbackQuery: baseQuery,
-      topicQueryCount
+      topicQueryCount,
+      rawCount: Number(fallback.diagnostic?.parsedResultCount || 0),
+      afterProviderFilterCount: fallback.results.length
     })
   };
 }
@@ -167,6 +228,8 @@ async function attemptWikimedia(query, stage, diagnostics, debug) {
       height: Number(info.thumbheight || info.height || 0) || null
     }];
   });
+  diagnostic.parsedResultCount = pages.length;
+  diagnostic.afterProviderFilterCount = results.length;
   return { results, diagnostic };
 }
 
@@ -179,8 +242,9 @@ async function searchOpenverse({ query, diagnostics, debug }) {
   const { payload, diagnostic } = await fetchJson(endpoint, {
     source: 'openverse', stage: 'image-search', timeoutMs: OPENVERSE_TIMEOUT_MS, diagnostics, debug
   });
+  const rawItems = Array.isArray(payload?.results) ? payload.results : [];
   let skippedInvalidPrimary = 0;
-  const results = (payload?.results || []).flatMap((item) => {
+  const results = rawItems.flatMap((item) => {
     const primaryUrl = normalizeHttpsUrl(item.url);
     const thumbnailUrl = normalizeHttpsUrl(item.thumbnail);
     if (!primaryUrl) {
@@ -205,9 +269,15 @@ async function searchOpenverse({ query, diagnostics, debug }) {
       height: Number(item.height || 0) || null
     }];
   });
+  diagnostic.parsedResultCount = rawItems.length;
+  diagnostic.afterProviderFilterCount = results.length;
   return {
     results,
-    status: statusFromDiagnostic(diagnostic, { skippedInvalidPrimary })
+    status: statusFromDiagnostic(diagnostic, {
+      skippedInvalidPrimary,
+      rawCount: rawItems.length,
+      afterProviderFilterCount: results.length
+    })
   };
 }
 
@@ -237,7 +307,9 @@ async function searchOpenI({ baseQuery, combinedQuery, diagnostics, debug }) {
             retryUsed: index > 0,
             fallbackUsed: !sameQuery && index > 0,
             fallbackQuery: !sameQuery && index > 0 ? baseQuery : null,
-            topicQueryCount: firstCount
+            topicQueryCount: firstCount,
+            rawCount: Number(response.diagnostic?.parsedResultCount || 0),
+            afterProviderFilterCount: response.results.length
           })
         };
       }
@@ -247,7 +319,7 @@ async function searchOpenI({ baseQuery, combinedQuery, diagnostics, debug }) {
     }
   }
   if (lastError) throw lastError;
-  return { results: [], status: { retryUsed: true, topicQueryCount: firstCount } };
+  return { results: [], status: { retryUsed: true, topicQueryCount: firstCount, rawCount: 0, afterProviderFilterCount: 0 } };
 }
 
 async function attemptOpenI(query, stage, diagnostics, debug) {
@@ -292,6 +364,8 @@ async function attemptOpenI(query, stage, diagnostics, debug) {
       height: Number(item.height || 0) || null
     }];
   });
+  diagnostic.parsedResultCount = items.length;
+  diagnostic.afterProviderFilterCount = results.length;
   return { results, diagnostic };
 }
 
@@ -299,6 +373,7 @@ async function fetchJson(input, { source, stage, timeoutMs, diagnostics, debug }
   const requestUrl = String(input);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort('provider-timeout'), timeoutMs);
+  const startedAt = Date.now();
   let response;
   let rawBody = '';
   try {
@@ -315,10 +390,21 @@ async function fetchJson(input, { source, stage, timeoutMs, diagnostics, debug }
       source,
       stage,
       requestUrl,
+      timeoutMs,
+      durationMs: Date.now() - startedAt,
+      fetchThrew: false,
+      fetchErrorName: null,
+      fetchErrorMessage: null,
+      responseStatus: response.status,
+      responseOk: response.ok,
       status: response.status,
       ok: response.ok,
       contentType: response.headers.get('Content-Type') || '',
       timedOut: false,
+      failureType: response.ok ? null : 'http',
+      rawBodyPreview: previewBody(rawBody),
+      parsedResultCount: null,
+      afterProviderFilterCount: null,
       ...(debug ? { rawResponseBody: limitBody(rawBody) } : {})
     };
     diagnostics.push(diagnostic);
@@ -326,28 +412,41 @@ async function fetchJson(input, { source, stage, timeoutMs, diagnostics, debug }
     try {
       return { payload: JSON.parse(rawBody), diagnostic };
     } catch (error) {
-      throw new ProviderError(`${source} returned a non-JSON response`, {
-        ...diagnostic,
-        parseError: error instanceof Error ? error.message : String(error)
-      });
+      diagnostic.failureType = 'parse';
+      diagnostic.parseErrorName = error instanceof Error ? error.name : typeof error;
+      diagnostic.parseErrorMessage = error instanceof Error ? error.message : String(error);
+      throw new ProviderError(`${source} returned a non-JSON response`, diagnostic);
     }
   } catch (error) {
     if (error instanceof ProviderError) throw error;
     const timedOut = controller.signal.aborted || error?.name === 'AbortError';
+    const fetchErrorName = error instanceof Error ? error.name : typeof error;
+    const fetchErrorMessage = error instanceof Error ? error.message : String(error);
+    const failureType = timedOut ? 'timeout' : fetchErrorName === 'TypeError' ? 'network' : 'other';
     const diagnostic = {
       source,
       stage,
       requestUrl,
+      timeoutMs,
+      durationMs: Date.now() - startedAt,
+      fetchThrew: true,
+      fetchErrorName,
+      fetchErrorMessage,
+      responseStatus: response?.status ?? null,
+      responseOk: response?.ok ?? false,
       status: response?.status ?? null,
       ok: false,
       contentType: response?.headers?.get('Content-Type') || '',
       timedOut,
-      networkError: error instanceof Error ? error.message : String(error),
+      failureType,
+      rawBodyPreview: previewBody(rawBody),
+      parsedResultCount: null,
+      afterProviderFilterCount: null,
       ...(debug ? { rawResponseBody: limitBody(rawBody) } : {})
     };
     diagnostics.push(diagnostic);
     const wrapped = new ProviderError(
-      timedOut ? `${source} timed out after ${timeoutMs}ms` : `${source} request failed`,
+      timedOut ? `${source} timed out after ${timeoutMs}ms` : `${source} request failed: ${fetchErrorName}: ${fetchErrorMessage}`,
       diagnostic
     );
     wrapped.timedOut = timedOut;
@@ -360,8 +459,14 @@ async function fetchJson(input, { source, stage, timeoutMs, diagnostics, debug }
 function statusFromDiagnostic(diagnostic, extra = {}) {
   return {
     requestUrl: diagnostic?.requestUrl || null,
-    status: diagnostic?.status ?? null,
+    status: diagnostic?.responseStatus ?? diagnostic?.status ?? null,
+    responseOk: diagnostic?.responseOk ?? diagnostic?.ok ?? null,
     responseType: diagnostic?.contentType || null,
+    rawBodyPreview: diagnostic?.rawBodyPreview || '',
+    fetchThrew: Boolean(diagnostic?.fetchThrew),
+    fetchErrorName: diagnostic?.fetchErrorName || null,
+    fetchErrorMessage: diagnostic?.fetchErrorMessage || null,
+    failureType: diagnostic?.failureType || null,
     ...extra
   };
 }
@@ -437,11 +542,37 @@ function sourceLabel(source) {
   }[source] || source;
 }
 
+function previewBody(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length <= RAW_BODY_PREVIEW_LENGTH
+    ? text
+    : `${text.slice(0, RAW_BODY_PREVIEW_LENGTH)}…`;
+}
+
 function limitBody(value) {
   const text = String(value || '');
   return text.length <= DEBUG_BODY_LIMIT
     ? text
     : `${text.slice(0, DEBUG_BODY_LIMIT)}\n...[truncated ${text.length - DEBUG_BODY_LIMIT} characters]`;
+}
+
+function compactDiagnosticForLog(diagnostic) {
+  return {
+    source: diagnostic?.source || null,
+    stage: diagnostic?.stage || null,
+    requestUrl: diagnostic?.requestUrl || null,
+    durationMs: diagnostic?.durationMs ?? null,
+    fetchThrew: Boolean(diagnostic?.fetchThrew),
+    fetchErrorName: diagnostic?.fetchErrorName || null,
+    fetchErrorMessage: diagnostic?.fetchErrorMessage || null,
+    responseStatus: diagnostic?.responseStatus ?? diagnostic?.status ?? null,
+    responseOk: diagnostic?.responseOk ?? diagnostic?.ok ?? null,
+    failureType: diagnostic?.failureType || null,
+    contentType: diagnostic?.contentType || null,
+    rawBodyPreview: diagnostic?.rawBodyPreview || '',
+    parsedResultCount: diagnostic?.parsedResultCount ?? null,
+    afterProviderFilterCount: diagnostic?.afterProviderFilterCount ?? null
+  };
 }
 
 class ProviderError extends Error {
