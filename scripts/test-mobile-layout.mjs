@@ -1,53 +1,51 @@
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
 
-const css = await readFile(new URL('../dist/mobile-studio.css', import.meta.url), 'utf8');
-const bottomNavCss = await readFile(new URL('../dist/mobile-bottom-nav.css', import.meta.url), 'utf8');
-const responsiveCss = await readFile(new URL('../dist/responsive-blue-studio.css', import.meta.url), 'utf8');
+const css = await readFile(new URL('../dist/studio-rebuild.css', import.meta.url), 'utf8');
 const styles = await readFile(new URL('../dist/styles.css', import.meta.url), 'utf8');
+const shell = await readFile(new URL('../dist/site-shell.js', import.meta.url), 'utf8');
 const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
 
 assert.match(html, /viewport-fit=cover/);
-assert.match(styles, /mobile-studio\.css/);
-assert.match(styles, /mobile-bottom-nav\.css/);
-assert.match(styles, /responsive-blue-studio\.css/);
-assert.match(css, /@media \(max-width: 780px\)/);
-assert.match(css, /safe-area-inset-bottom/);
-assert.match(css, /\.wizard-progress/);
-assert.match(css, /position:\s*sticky/);
-assert.match(css, /\.media-results-grid/);
-assert.match(css, /\.pdf-extractor-grid/);
-assert.match(bottomNavCss, /position:\s*fixed\s*!important/);
+assert.match(styles, /studio-rebuild\.css/);
+assert.doesNotMatch(styles, /mobile-studio\.css/);
+assert.doesNotMatch(styles, /mobile-bottom-nav\.css/);
+assert.doesNotMatch(styles, /responsive-blue-studio\.css/);
 
-// Blue theme replaces the old lime accent at the final cascade layer.
-assert.match(responsiveCss, /--studio-accent:\s*#4da3ff/i);
-assert.match(responsiveCss, /--studio-accent-hover:\s*#74b8ff/i);
-assert.match(responsiveCss, /linear-gradient\(145deg, #80c5ff, var\(--studio-accent\)\)/i);
+// Navigation is structurally moved outside the header before route setup.
+assert.match(shell, /primaryNav\.classList\.add\('app-navigation'\)/);
+assert.match(shell, /document\.body\.insertBefore\(primaryNav, appMain\)/);
+assert.match(shell, /data-root-navigation/);
 
-// Laptop: navigation stays above and centered in the top bar.
-assert.match(responsiveCss, /@media \(min-width: 1200px\)/);
-assert.match(responsiveCss, /grid-template-columns:\s*repeat\(4, 54px\)\s*!important/);
-assert.match(responsiveCss, /position:\s*static\s*!important/);
+// New blue/light product language.
+assert.match(css, /--studio-accent:\s*#2563eb/i);
+assert.match(css, /color-scheme:\s*light/);
+assert.match(css, /Completely new home composition/);
+assert.match(css, /background:\s*linear-gradient\(145deg, #1d4ed8, #2563eb/);
 
-// iPad/tablet: navigation is a fixed vertical rail beside the page.
-assert.match(responsiveCss, /@media \(min-width: 768px\) and \(max-width: 1199px\)/);
-assert.match(responsiveCss, /left:\s*var\(--tablet-rail-gap\)\s*!important/);
-assert.match(responsiveCss, /grid-template-rows:\s*repeat\(4, 62px\)\s*!important/);
-assert.match(responsiveCss, /transform:\s*translateY\(-50%\)\s*!important/);
+// Laptop: centered top navigation.
+assert.match(css, /@media \(min-width: 1200px\)/);
+assert.match(css, /top:\s*14px\s*!important/);
+assert.match(css, /left:\s*50%\s*!important/);
+assert.match(css, /grid-template-columns:\s*repeat\(4, 1fr\)\s*!important/);
+assert.match(css, /translateX\(-50%\)/);
 
-// Phone: navigation is fixed below in four equal, centered cells.
-assert.match(responsiveCss, /@media \(max-width: 767px\)/);
-assert.match(responsiveCss, /bottom:\s*max\(var\(--phone-edge\), env\(safe-area-inset-bottom\)\)\s*!important/);
-assert.match(responsiveCss, /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)\s*!important/);
-assert.match(responsiveCss, /place-items:\s*center\s*!important/);
-assert.match(responsiveCss, /z-index:\s*5000\s*!important/);
-assert.match(responsiveCss, /padding-bottom:[^;]+safe-area-inset-bottom/);
+// iPad/tablet: fixed vertical side rail.
+assert.match(css, /@media \(min-width: 769px\) and \(max-width: 1199px\) and \(min-height: 600px\)/);
+assert.match(css, /left:\s*14px\s*!important/);
+assert.match(css, /grid-template-rows:\s*repeat\(4, 1fr\)\s*!important/);
+assert.match(css, /translateY\(-50%\)/);
 
-// Landscape phones remain bottom-nav layouts rather than becoming tablet rails.
-assert.match(responsiveCss, /@media \(max-height: 560px\) and \(pointer: coarse\)/);
+// Phone: full-width navigation at the actual lower viewport edge.
+assert.match(css, /@media \(max-width: 768px\), \(max-width: 920px\) and \(max-height: 590px\)/);
+assert.match(css, /bottom:\s*0\s*!important/);
+assert.match(css, /left:\s*0\s*!important/);
+assert.match(css, /right:\s*0\s*!important/);
+assert.match(css, /width:\s*100%\s*!important/);
+assert.match(css, /grid-template-columns:\s*repeat\(4, minmax\(0,1fr\)\)\s*!important/);
+assert.match(css, /padding:\s*0 8px env\(safe-area-inset-bottom\)/);
+assert.match(css, /border-radius:\s*22px 22px 0 0\s*!important/);
+assert.match(css, /place-items:\s*center\s*!important/);
 
-await access(new URL('../dist/mobile-studio.css', import.meta.url));
-await access(new URL('../dist/mobile-bottom-nav.css', import.meta.url));
-await access(new URL('../dist/responsive-blue-studio.css', import.meta.url));
-
-console.log('Responsive blue laptop, tablet and phone layout validation passed.');
+await access(new URL('../dist/studio-rebuild.css', import.meta.url));
+console.log('Rebuilt laptop, iPad and true-bottom mobile layout validation passed.');
