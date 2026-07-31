@@ -6,6 +6,8 @@
 
   const SESSION_DOWNVOTES_KEY = 'lecture-studio:image-search-downvotes';
   const DEBUG_MODE = new URLSearchParams(window.location.search).has('imageSearchDebug');
+  const SEARCH_TIMEOUT_MS = 15_000;
+
   const panel = document.createElement('section');
   panel.id = 'adaptive-image-search';
   panel.className = 'adaptive-image-search panel';
@@ -58,7 +60,8 @@
     topic: null,
     results: [],
     downvotedUrls: loadSessionDownvotes(),
-    voting: new Set()
+    voting: new Set(),
+    activeSearch: null
   };
 
   elements.form.addEventListener('submit', (event) => {
@@ -80,16 +83,28 @@
   });
 
   async function runSearch({ retry, topic = state.topic } = {}) {
+    if (state.activeSearch) state.activeSearch.abort();
+
+    const controller = new AbortController();
+    state.activeSearch = controller;
+    const timeout = window.setTimeout(() => controller.abort('search-timeout'), SEARCH_TIMEOUT_MS);
+
     setLoading(true);
     elements.topicPanel.hidden = true;
     elements.sourceStatus.hidden = true;
     elements.results.hidden = true;
-    setStatus(retry ? 'Searching again without this session’s downvoted images…' : 'Checking Wikidata and searching live sources…', 'neutral');
+    setStatus(
+      retry
+        ? 'Searching again without this session’s downvoted images…'
+        : 'Checking Wikidata and searching live sources…',
+      'neutral'
+    );
 
     try {
       const response = await fetch('/api/image-search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           query: state.query,
           topic,
@@ -100,12 +115,16 @@
       });
       const payload = await readJsonResponse(response);
       if (DEBUG_MODE) console.info('[adaptive-image-search] raw API response', payload);
-      if (!response.ok) throw new Error(payload.error || `Image search failed with status ${response.status}.`);
+      if (!response.ok) {
+        throw new Error(payload.error || `Image search failed with status ${response.status}.`);
+      }
 
       if (payload.requiresTopic === true) {
         const topics = Array.isArray(payload.topics) ? payload.topics : [];
         state.topic = null;
-        if (!topics.length) throw new Error('Wikidata requested topic selection but returned no topic choices.');
+        if (!topics.length) {
+          throw new Error('Wikidata requested topic selection but returned no topic choices.');
+        }
         renderTopicChoices(topics);
         elements.topicPanel.hidden = false;
         elements.topicPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -115,18 +134,41 @@
 
       state.topic = payload.topic || null;
       state.results = Array.isArray(payload.results) ? payload.results : [];
-      renderSourceStatus(payload.sourceStatus || [], payload.cacheHit);
+      const sourceItems = Array.isArray(payload.sourceStatus) ? payload.sourceStatus : [];
+      renderSourceStatus(sourceItems, payload.cacheHit);
       renderResults(state.results);
       elements.retry.hidden = false;
 
       const topicText = payload.topic?.label ? ` for ${payload.topic.label}` : '';
       const cacheText = payload.cacheHit ? ' Cached metadata was ranked with current feedback.' : '';
-      setStatus(`${state.results.length} result${state.results.length === 1 ? '' : 's'} found${topicText}.${cacheText}`, state.results.length ? 'success' : 'neutral');
+      const providerNotice = providerNoticeText(sourceItems);
+
+      if (state.results.length) {
+        setStatus(
+          `${state.results.length} result${state.results.length === 1 ? '' : 's'} found${topicText}.${cacheText}${providerNotice}`,
+          'success'
+        );
+      } else {
+        setStatus(
+          `No results found${topicText}. Try a broader term or try again.${providerNotice}`,
+          'error'
+        );
+      }
     } catch (error) {
-      setStatus(error.message || 'The adaptive image search failed.', 'error');
+      const timedOut = controller.signal.aborted || error?.name === 'AbortError';
+      setStatus(
+        timedOut
+          ? 'The image search took too long. No results were lost—try again or use a broader term.'
+          : error?.message || 'The adaptive image search failed. Try again.',
+        'error'
+      );
       elements.retry.hidden = !state.query;
     } finally {
-      setLoading(false);
+      window.clearTimeout(timeout);
+      if (state.activeSearch === controller) {
+        state.activeSearch = null;
+        setLoading(false);
+      }
     }
   }
 
@@ -149,26 +191,50 @@
 
   function renderSourceStatus(items, cacheHit) {
     elements.sourceStatus.replaceChildren();
+
     if (cacheHit) {
       const cached = document.createElement('span');
       cached.className = 'is-cached';
       cached.textContent = '7-day metadata cache';
       elements.sourceStatus.append(cached);
     }
+
     for (const item of items) {
       const chip = document.createElement('span');
-      chip.className = item.ok ? 'is-ready' : 'is-unavailable';
-      chip.textContent = item.ok
-        ? `${sourceLabel(item.source)} · ${Number(item.count || 0)}`
-        : `${sourceLabel(item.source)} unavailable`;
+      const label = sourceLabel(item.source);
+
+      if (item.timedOut) {
+        chip.className = 'is-warning';
+        chip.textContent = `${label} timed out · other sources shown`;
+      } else if (item.skipped) {
+        chip.className = 'is-warning';
+        chip.textContent = `${label} skipped · other sources shown`;
+      } else if (item.ok) {
+        chip.className = 'is-ready';
+        const fallbackText = item.fallbackUsed ? ' · base-query fallback' : '';
+        chip.textContent = `${label} · ${Number(item.count || 0)}${fallbackText}`;
+      } else {
+        chip.className = 'is-unavailable';
+        chip.textContent = `${label} unavailable`;
+      }
+
       chip.title = [
+        item.message || '',
         item.error || '',
         item.status != null ? `HTTP ${item.status}` : '',
         item.requestUrl || ''
       ].filter(Boolean).join(' · ');
       elements.sourceStatus.append(chip);
     }
+
     elements.sourceStatus.hidden = !elements.sourceStatus.childElementCount;
+  }
+
+  function providerNoticeText(items) {
+    const notices = items
+      .filter((item) => item.timedOut || item.skipped)
+      .map((item) => item.message || `${sourceLabel(item.source)} was skipped; other sources are shown.`);
+    return notices.length ? ` ${[...new Set(notices)].join(' ')}` : '';
   }
 
   function renderResults(results) {
@@ -192,12 +258,14 @@
       && String(result.thumbnailUrl) !== primaryUrl
       ? String(result.thumbnailUrl)
       : '';
+
     image.src = primaryUrl;
     image.alt = result.caption || result.title || `${result.sourceLabel || 'Search'} result`;
     image.loading = 'lazy';
     image.decoding = 'async';
     image.referrerPolicy = 'no-referrer';
     if (fallbackUrl) image.dataset.fallbackUrl = fallbackUrl;
+
     image.addEventListener('load', () => card.classList.remove('has-image-error'));
     image.addEventListener('error', () => {
       const fallback = image.dataset.fallbackUrl || '';
@@ -303,7 +371,10 @@
 
       card.dataset.voted = String(rating);
       card.classList.add(rating > 0 ? 'is-upvoted' : 'is-downvoted');
-      card.querySelectorAll('.adaptive-vote-button').forEach((control) => { control.disabled = true; });
+      card.querySelectorAll('.adaptive-vote-button').forEach((control) => {
+        control.disabled = true;
+      });
+
       result.feedbackScore = Number(result.feedbackScore || 0) + rating;
       card.dataset.feedbackScore = String(result.feedbackScore);
       updateFeedbackBadge(card, card.querySelector('[data-feedback-badge]'));
@@ -312,11 +383,12 @@
         state.downvotedUrls.add(result.imageUrl);
         saveSessionDownvotes();
       }
+
       resortRenderedCards();
       setStatus(`Feedback saved. This result now has a net score of ${result.feedbackScore}.`, 'success');
     } catch (error) {
       button.disabled = false;
-      setStatus(error.message || 'Feedback could not be saved.', 'error');
+      setStatus(error?.message || 'Feedback could not be saved.', 'error');
     } finally {
       state.voting.delete(key);
     }
@@ -368,7 +440,11 @@
   function loadSessionDownvotes() {
     try {
       const value = JSON.parse(sessionStorage.getItem(SESSION_DOWNVOTES_KEY) || '[]');
-      return new Set(Array.isArray(value) ? value.filter((item) => typeof item === 'string').slice(-120) : []);
+      return new Set(
+        Array.isArray(value)
+          ? value.filter((item) => typeof item === 'string').slice(-120)
+          : []
+      );
     } catch {
       return new Set();
     }
@@ -376,7 +452,10 @@
 
   function saveSessionDownvotes() {
     try {
-      sessionStorage.setItem(SESSION_DOWNVOTES_KEY, JSON.stringify([...state.downvotedUrls].slice(-120)));
+      sessionStorage.setItem(
+        SESSION_DOWNVOTES_KEY,
+        JSON.stringify([...state.downvotedUrls].slice(-120))
+      );
     } catch {}
   }
 
