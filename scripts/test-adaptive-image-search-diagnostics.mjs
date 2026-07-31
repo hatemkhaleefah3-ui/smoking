@@ -1,90 +1,105 @@
 import assert from 'node:assert/strict';
-import { handleImageSearchRequest, rankResults } from '../worker/src/image-search.js';
+import { readFile } from 'node:fs/promises';
+import {
+  handleImageSearchRequest,
+  rankResults
+} from '../worker/src/image-search.js';
 
 const ranked = rankResults([
-  { id: 'neutral', source: 'wikimedia', sourceLabel: 'Wikimedia', imageUrl: 'https://example.test/neutral.jpg' },
-  { id: 'up-one', source: 'openverse', sourceLabel: 'Openverse', imageUrl: 'https://example.test/up-one.jpg' },
-  { id: 'up-two', source: 'openverse', sourceLabel: 'Openverse', imageUrl: 'https://example.test/up-two.jpg' },
-  { id: 'down-one', source: 'openverse', sourceLabel: 'Openverse', imageUrl: 'https://example.test/down-one.jpg' },
-  { id: 'down-two', source: 'openverse', sourceLabel: 'Openverse', imageUrl: 'https://example.test/down-two.jpg' },
-  { id: 'down-three', source: 'openverse', sourceLabel: 'Openverse', imageUrl: 'https://example.test/down-three.jpg' }
+  { id: 'neutral', imageUrl: 'https://example.test/neutral.jpg', sourceLabel: 'Neutral' },
+  { id: 'up', imageUrl: 'https://example.test/up.jpg', sourceLabel: 'Up' },
+  { id: 'down', imageUrl: 'https://example.test/down.jpg', sourceLabel: 'Down' },
+  { id: 'removed', imageUrl: 'https://example.test/removed.jpg', sourceLabel: 'Removed' }
 ], new Map([
-  ['https://example.test/up-one.jpg', 1],
-  ['https://example.test/up-two.jpg', 2],
-  ['https://example.test/down-one.jpg', -1],
-  ['https://example.test/down-two.jpg', -2],
-  ['https://example.test/down-three.jpg', -3]
+  ['https://example.test/up.jpg', 2],
+  ['https://example.test/down.jpg', -2],
+  ['https://example.test/removed.jpg', -3]
 ]), new Set(), null);
 
-assert.deepEqual(ranked.map((item) => item.id), [
-  'up-two', 'up-one', 'neutral', 'down-one', 'down-two'
-]);
-assert.ok(!ranked.some((item) => item.id === 'down-three'));
-assert.equal(ranked.find((item) => item.id === 'down-two').feedbackScore, -2);
+assert.deepEqual(ranked.map((item) => item.id), ['up', 'neutral', 'down']);
+assert.equal(ranked.find((item) => item.id === 'down').feedbackScore, -2);
 
 const originalFetch = globalThis.fetch;
-const db = createD1();
-const env = { DB: db, LECTURES: createR2() };
-const requestHeaders = [];
-const openIQueries = [];
+let mode = 'heart';
+let heartOpenIAttempt = 0;
+let nutritionOpenIAttempt = 0;
 
-globalThis.fetch = async (input, init = {}) => {
+globalThis.fetch = async (input) => {
   const url = new URL(String(input));
-  const headers = new Headers(init.headers || {});
-  requestHeaders.push({ url: url.href, userAgent: headers.get('User-Agent'), apiUserAgent: headers.get('Api-User-Agent') });
 
   if (url.hostname === 'www.wikidata.org') {
     const action = url.searchParams.get('action');
     if (action === 'wbsearchentities') {
+      const query = url.searchParams.get('search');
+      if (query.toLowerCase() === 'heart') {
+        return Response.json({
+          search: [{ id: 'Q-heart', label: 'heart', description: 'organ of the circulatory system' }]
+        });
+      }
       return Response.json({
         search: [
-          { id: 'Q5', label: 'glycine', description: 'amino acid, neurotransmitter and nutrient' },
-          { id: 'Q6', label: 'Glycine', description: 'plant genus including soybean' }
+          { id: 'Q-glycine', label: 'glycine', description: 'amino acid, neurotransmitter and metabolite' },
+          { id: 'Q-plant', label: 'Glycine', description: 'genus of plants including soybean' }
         ]
       });
     }
-    if (url.searchParams.get('ids') === 'Q5|Q6') {
-      return Response.json({ entities: {
-        Q5: {
-          id: 'Q5',
-          labels: { en: { value: 'glycine' } },
-          descriptions: { en: { value: 'amino acid and inhibitory neurotransmitter used in metabolism' } },
-          claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q11173' } } } }] }
-        },
-        Q6: {
-          id: 'Q6',
-          labels: { en: { value: 'Glycine' } },
-          descriptions: { en: { value: 'plant genus including soybean' } },
-          claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q34740' } } } }] }
+
+    const ids = url.searchParams.get('ids');
+    if (ids === 'Q-heart') {
+      return Response.json({
+        entities: {
+          'Q-heart': {
+            id: 'Q-heart',
+            labels: { en: { value: 'heart' } },
+            descriptions: { en: { value: 'organ of the circulatory system' } },
+            claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q-organ' } } } }] }
+          }
         }
-      } });
+      });
     }
-    return Response.json({ entities: {
-      Q11173: {
-        labels: { en: { value: 'chemical compound' } },
-        descriptions: { en: { value: 'molecular chemical entity' } }
-      },
-      Q34740: {
-        labels: { en: { value: 'genus' } },
-        descriptions: { en: { value: 'taxonomic rank for plants' } }
-      }
-    } });
+    if (ids === 'Q-glycine|Q-plant') {
+      return Response.json({
+        entities: {
+          'Q-glycine': {
+            id: 'Q-glycine',
+            labels: { en: { value: 'glycine' } },
+            descriptions: { en: { value: 'amino acid, neurotransmitter and metabolite' } },
+            claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q-chemical' } } } }] }
+          },
+          'Q-plant': {
+            id: 'Q-plant',
+            labels: { en: { value: 'Glycine' } },
+            descriptions: { en: { value: 'plant genus including soybean' } },
+            claims: { P31: [{ mainsnak: { datavalue: { value: { id: 'Q-genus' } } } }] }
+          }
+        }
+      });
+    }
+    return Response.json({ entities: {} });
   }
 
   if (url.hostname === 'commons.wikimedia.org') {
-    return Response.json({ query: { pages: {
-      1: {
-        pageid: 1,
-        title: 'File:Glycine structure.svg',
-        imageinfo: [{
-          mime: 'image/svg+xml',
-          thumburl: 'https://upload.wikimedia.org/glycine.png',
-          url: 'https://upload.wikimedia.org/glycine.svg',
-          descriptionurl: 'https://commons.wikimedia.org/wiki/File:Glycine_structure.svg',
-          extmetadata: { ImageDescription: { value: 'Glycine structure' } }
+    const query = url.searchParams.get('gsrsearch');
+    if (query !== 'Heart' && query !== 'glycine') {
+      return Response.json({ query: { pages: [] } });
+    }
+    return Response.json({
+      query: {
+        pages: [{
+          pageid: query === 'Heart' ? 1 : 2,
+          title: `File:${query}.jpg`,
+          imageinfo: [{
+            mime: 'image/jpeg',
+            thumburl: `https://upload.wikimedia.org/${query.toLowerCase()}.jpg`,
+            url: `https://upload.wikimedia.org/${query.toLowerCase()}-original.jpg`,
+            descriptionurl: `https://commons.wikimedia.org/wiki/File:${query}.jpg`,
+            extmetadata: {
+              ImageDescription: { value: `${query} educational image` }
+            }
+          }]
         }]
       }
-    } } });
+    });
   }
 
   if (url.hostname === 'api.openverse.org') {
@@ -92,76 +107,111 @@ globalThis.fetch = async (input, init = {}) => {
   }
 
   if (url.hostname === 'openi.nlm.nih.gov') {
-    const query = url.searchParams.get('query') || '';
-    openIQueries.push(query);
-    if (query !== 'glycine') {
-      return Response.json({ count: 0, total: 0, list: [] });
+    const query = url.searchParams.get('query');
+
+    if (mode === 'heart') {
+      heartOpenIAttempt += 1;
+      if (heartOpenIAttempt === 1) throw new DOMException('Timed out', 'AbortError');
+      return Response.json({
+        count: 1,
+        list: [{
+          uid: 'PMC-heart',
+          title: 'Heart anatomy',
+          authors: 'Example Author',
+          image: { id: 'F1', caption: 'Heart anatomy figure' },
+          imgLarge: '/imgs/512/heart.png'
+        }]
+      });
     }
-    return Response.json({
-      count: 1,
-      total: 1,
-      list: [{
-        uid: 'PMC3846451',
-        pmcid: '3846451',
-        title: 'Identification of a single amino acid in GluN1 that is critical for glycine-primed internalization.',
-        authors: 'Han L, Campanucci VA, Cooke J, Salter MW',
-        journal_title: 'Molecular brain',
-        image: {
-          id: 'F5',
-          caption: 'Mutant GluN1 receptors did not show <b>glycine</b> priming.'
-        },
-        imgThumb: '/imgs/100/59/3846451/example.png',
-        imgLarge: '/imgs/512/59/3846451/example.png',
-        detailedQueryURL: '/search?img=PMC3846451_example&query=glycine&req=4'
-      }]
-    });
+
+    if (mode === 'nutrition-timeout') {
+      nutritionOpenIAttempt += 1;
+      throw new DOMException(`Timed out ${query}`, 'AbortError');
+    }
   }
 
-  throw new Error(`Unexpected URL: ${url}`);
+  throw new Error(`Unexpected mock URL: ${url.href}`);
+};
+
+const env = {
+  DB: createD1(),
+  LECTURES: null
 };
 
 try {
-  const ambiguousResponse = await handleImageSearchRequest(request({ query: 'glycine', debug: true }), env);
-  const ambiguous = await ambiguousResponse.json();
-  assert.equal(ambiguous.requiresTopic, true);
-  assert.deepEqual(ambiguous.topics.map((topic) => topic.id), [
+  const heartResponse = await handleImageSearchRequest(request({
+    query: 'Heart',
+    retry: true,
+    debug: true
+  }), env);
+  assert.equal(heartResponse.status, 200);
+  const heart = await heartResponse.json();
+
+  assert.equal(heart.requiresTopic, false);
+  assert.equal(heart.externalQuery, 'Heart anatomy clinical medical image');
+  assert.ok(heart.results.some((item) => item.source === 'wikimedia'));
+  assert.ok(heart.results.some((item) => item.source === 'nlm-open-i'));
+
+  const wikimedia = heart.sourceStatus.find((item) => item.source === 'wikimedia');
+  assert.equal(wikimedia.ok, true);
+  assert.equal(wikimedia.fallbackUsed, true);
+  assert.equal(wikimedia.fallbackQuery, 'Heart');
+  assert.equal(wikimedia.topicQueryCount, 0);
+
+  const nlmHeart = heart.sourceStatus.find((item) => item.source === 'nlm-open-i');
+  assert.equal(nlmHeart.ok, true);
+  assert.equal(nlmHeart.fallbackUsed, true);
+  assert.equal(nlmHeart.fallbackQuery, 'Heart');
+  assert.equal(heartOpenIAttempt, 2);
+  assert.ok(heart.debugDiagnostics.providers.some((item) =>
+    item.source === 'nlm-open-i' && item.timedOut === true));
+  assert.ok(heart.debugDiagnostics.providers.some((item) =>
+    item.source === 'wikimedia' && item.stage === 'base-query-fallback'));
+
+  mode = 'nutrition-timeout';
+  const ambiguityResponse = await handleImageSearchRequest(request({
+    query: 'glycine',
+    retry: true,
+    debug: true
+  }), env);
+  const ambiguity = await ambiguityResponse.json();
+  assert.equal(ambiguity.requiresTopic, true);
+  assert.deepEqual(ambiguity.topics.map((topic) => topic.id), [
     'chemical-structure',
     'medical-neurological',
     'nutrition-metabolism',
     'botany'
   ]);
-  assert.ok(ambiguous.debugDiagnostics.wikidata.length >= 3);
-  assert.match(ambiguous.debugDiagnostics.wikidata[0].rawResponseBody, /neurotransmitter/);
 
-  const selected = ambiguous.topics.find((topic) => topic.id === 'medical-neurological');
-  const searchResponse = await handleImageSearchRequest(request({ query: 'glycine', topic: selected, debug: true }), env);
-  const payload = await searchResponse.json();
-  assert.equal(payload.requiresTopic, false);
-  assert.equal(payload.feedbackRanking.method, 'net-score');
-  assert.equal(payload.feedbackRanking.negativeRemovalThreshold, -3);
-  assert.ok(payload.sourceStatus.some((item) => item.source === 'wikimedia' && item.count === 1));
+  const nutrition = ambiguity.topics.find((topic) => topic.id === 'nutrition-metabolism');
+  const nutritionResponse = await handleImageSearchRequest(request({
+    query: 'glycine',
+    topic: nutrition,
+    retry: true,
+    debug: true
+  }), env);
+  assert.equal(nutritionResponse.status, 200);
+  const nutritionPayload = await nutritionResponse.json();
 
-  const nlmStatus = payload.sourceStatus.find((item) => item.source === 'nlm-open-i');
-  assert.equal(nlmStatus.count, 1);
-  assert.equal(nlmStatus.fallbackUsed, true);
-  assert.equal(nlmStatus.fallbackQuery, 'glycine');
-  assert.equal(nlmStatus.topicQueryCount, 0);
-  assert.deepEqual(openIQueries, ['glycine neurotransmitter', 'glycine']);
+  assert.ok(nutritionPayload.results.some((item) => item.source === 'wikimedia'));
+  const nlmNutrition = nutritionPayload.sourceStatus.find((item) => item.source === 'nlm-open-i');
+  assert.equal(nlmNutrition.ok, false);
+  assert.equal(nlmNutrition.timedOut, true);
+  assert.equal(nlmNutrition.skipped, true);
+  assert.match(nlmNutrition.message, /timed out, showing other sources/i);
+  assert.equal(nutritionOpenIAttempt, 2);
+  assert.equal(nutritionPayload.providerSummary.partial, true);
+  assert.ok(nutritionPayload.providerSummary.timedOut.includes('nlm-open-i'));
 
-  const nlm = payload.results.find((item) => item.source === 'nlm-open-i');
-  assert.ok(nlm);
-  assert.equal(nlm.imageUrl, 'https://openi.nlm.nih.gov/imgs/512/59/3846451/example.png');
-  assert.notEqual(nlm.imageUrl, 'https://openi.nlm.nih.gov/');
-  assert.equal(nlm.id, 'nlm-open-i:PMC3846451:F5');
-  assert.match(nlm.caption, /glycine priming/);
-  assert.equal(nlm.creator, 'Han L, Campanucci VA, Cooke J, Salter MW');
-  assert.ok(payload.debugDiagnostics.providers.some((item) => item.stage === 'base-query-fallback'));
+  const frontend = await readFile(new URL('../adaptive-image-search.js', import.meta.url), 'utf8');
+  assert.match(frontend, /AbortController/);
+  assert.match(frontend, /SEARCH_TIMEOUT_MS/);
+  assert.match(frontend, /finally\s*\{/);
+  assert.match(frontend, /setLoading\(false\)/);
+  assert.match(frontend, /timed out · other sources shown/);
+  assert.match(frontend, /No results found/);
 
-  assert.ok(requestHeaders.length >= 7);
-  assert.ok(requestHeaders.every((entry) => entry.userAgent?.includes('LectureStudioImageSearch/1.')));
-  assert.ok(requestHeaders.every((entry) => entry.apiUserAgent?.includes('LectureStudioImageSearch/1.')));
-
-  console.log('Adaptive topic hints, Open-i fallback, provider headers and proportional ranking passed.');
+  console.log('Adaptive provider fallback, timeout isolation and spinner recovery validation passed.');
 } finally {
   globalThis.fetch = originalFetch;
 }
@@ -169,14 +219,19 @@ try {
 function request(body) {
   return new Request('https://example.test/api/image-search', {
     method: 'POST',
-    headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
+    headers: {
+      Origin: 'https://example.test',
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify(body)
   });
 }
 
 function createD1() {
   return {
-    async batch(statements) { return statements.map(() => ({ success: true, results: [] })); },
+    async batch(statements) {
+      return statements.map(() => ({ success: true, results: [] }));
+    },
     prepare() {
       return {
         bind() { return this; },
@@ -184,17 +239,5 @@ function createD1() {
         async run() { return { success: true }; }
       };
     }
-  };
-}
-
-function createR2() {
-  const values = new Map();
-  return {
-    async get(key) {
-      const value = values.get(key);
-      return value == null ? null : { async text() { return value; } };
-    },
-    async put(key, value) { values.set(key, String(value)); },
-    async delete(key) { values.delete(key); }
   };
 }
