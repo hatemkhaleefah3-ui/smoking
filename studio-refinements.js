@@ -24,10 +24,23 @@
     button.replaceChildren(suggestionLabels[index] || 'Search example');
   });
 
-  document.querySelectorAll('.pdf-number-choice').forEach((button) => {
-    button.dataset.keepText = 'true';
+  preserveNumberLabels(document);
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node instanceof Element) preserveNumberLabels(node);
+      }
+    }
   });
+  observer.observe(document.body, { childList: true, subtree: true });
 
   const preview = document.querySelector('.preview-visual');
   if (preview) preview.setAttribute('aria-label', 'Glycine oxidation pathway diagram');
+
+  function preserveNumberLabels(root) {
+    if (root instanceof Element && root.matches('.pdf-number-choice')) root.dataset.keepText = 'true';
+    root.querySelectorAll?.('.pdf-number-choice').forEach((button) => {
+      button.dataset.keepText = 'true';
+    });
+  }
 })();
