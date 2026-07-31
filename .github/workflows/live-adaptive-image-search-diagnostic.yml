@@ -28,7 +28,9 @@ jobs:
           const url = process.env.DEPLOYMENT_URL;
           for (let attempt = 1; attempt <= 40; attempt += 1) {
             try {
-              const response = await fetch(`${url}?attempt=${attempt}&ts=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
+              const response = await fetch(`${url}?attempt=${attempt}&ts=${Date.now()}`, {
+                headers: { 'Cache-Control': 'no-cache' }
+              });
               const body = await response.json();
               console.log(`attempt=${attempt} status=${response.status} deployed=${body.deploymentCommitSha || 'missing'} expected=${expected}`);
               if (response.ok && body.deploymentCommitSha === expected) process.exit(0);
@@ -63,15 +65,9 @@ jobs:
           };
 
           const ambiguity = await post({ query: 'glycine', debug: true, retry: true });
-          console.log('--- GLYCINE AMBIGUITY RESPONSE START ---');
-          console.log(JSON.stringify(ambiguity, null, 2));
-          console.log('--- GLYCINE AMBIGUITY RESPONSE END ---');
-          assert.equal(ambiguity.status, 200);
-          assert.equal(ambiguity.payload.requiresTopic, true, 'glycine should return topic choices');
-          assert.ok(Array.isArray(ambiguity.payload.topics) && ambiguity.payload.topics.length >= 2);
-          assert.ok(Array.isArray(ambiguity.payload.debugDiagnostics?.wikidata));
-
-          const selectedTopic = ambiguity.payload.topics[0];
+          const selectedTopic = Array.isArray(ambiguity.payload?.topics)
+            ? ambiguity.payload.topics[0] || null
+            : null;
           const providers = await post({
             query: 'glycine',
             topic: selectedTopic,
@@ -79,19 +75,53 @@ jobs:
             retry: true,
             excludeUrls: []
           });
-          console.log('--- GLYCINE PROVIDER RESPONSE START ---');
-          console.log(JSON.stringify(providers, null, 2));
-          console.log('--- GLYCINE PROVIDER RESPONSE END ---');
+
+          const output = { ambiguity, selectedTopic, providers };
+          await writeFile(
+            'live-adaptive-image-search-diagnostic.json',
+            `${JSON.stringify(output, null, 2)}\n`,
+            'utf8'
+          );
+
+          console.log('ambiguity summary', JSON.stringify({
+            status: ambiguity.status,
+            requiresTopic: ambiguity.payload?.requiresTopic,
+            topics: ambiguity.payload?.topics?.map((topic) => topic.id) || [],
+            wikidataStages: ambiguity.payload?.debugDiagnostics?.wikidata?.map((item) => ({
+              stage: item.stage,
+              status: item.status,
+              contentType: item.contentType
+            })) || []
+          }, null, 2));
+          console.log('provider summary', JSON.stringify({
+            status: providers.status,
+            resultCount: providers.payload?.resultCount,
+            sourceStatus: providers.payload?.sourceStatus,
+            sampleNlm: providers.payload?.results?.find((item) => item.source === 'nlm-open-i') || null
+          }, null, 2));
+
+          assert.equal(ambiguity.status, 200);
+          assert.equal(ambiguity.payload.requiresTopic, true, 'glycine should return topic choices');
+          assert.ok(Array.isArray(ambiguity.payload.topics) && ambiguity.payload.topics.length >= 2);
+          assert.ok(Array.isArray(ambiguity.payload.debugDiagnostics?.wikidata));
+          assert.ok(ambiguity.payload.debugDiagnostics.wikidata.every((item) => item.status === 200));
+
           assert.equal(providers.status, 200);
           assert.equal(providers.payload.requiresTopic, false);
           assert.ok(Array.isArray(providers.payload.sourceStatus));
-          for (const source of ['wikimedia', 'openverse', 'nlm-open-i']) {
-            assert.ok(providers.payload.sourceStatus.some((item) => item.source === source), `Missing ${source} status`);
-          }
           assert.ok(Array.isArray(providers.payload.debugDiagnostics?.providers));
 
-          const output = { ambiguity, providers };
-          await writeFile('live-adaptive-image-search-diagnostic.json', `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+          const source = (name) => providers.payload.sourceStatus.find((item) => item.source === name);
+          assert.ok(source('wikimedia')?.ok, 'Wikimedia should succeed');
+          assert.ok(source('wikimedia')?.count > 0, 'Wikimedia should return images');
+          assert.ok(source('openverse'), 'Openverse status is required');
+          assert.ok(source('nlm-open-i')?.ok, 'NLM Open-i should succeed');
+          assert.ok(source('nlm-open-i')?.count > 0, 'NLM Open-i should return images');
+
+          const nlmResults = providers.payload.results.filter((item) => item.source === 'nlm-open-i');
+          assert.ok(nlmResults.length > 0);
+          assert.ok(nlmResults.every((item) => item.imageUrl !== 'https://openi.nlm.nih.gov/'));
+          assert.ok(nlmResults.every((item) => /\/imgs\//.test(item.imageUrl)));
           NODE
 
       - name: Upload adaptive diagnostic JSON
@@ -100,4 +130,4 @@ jobs:
         with:
           name: live-adaptive-image-search-diagnostic
           path: live-adaptive-image-search-diagnostic.json
-          if-no-files-found: ignore
+          if-no-files-found: error
