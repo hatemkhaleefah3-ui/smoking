@@ -211,6 +211,11 @@
   integrationScript.async = false;
   document.head.append(integrationScript);
 
+  const refinementScript = document.createElement('script');
+  refinementScript.src = 'studio-refinements.js';
+  refinementScript.async = false;
+  document.head.append(refinementScript);
+
   const iconScrollScript = document.createElement('script');
   iconScrollScript.src = 'icon-scroll-system.js';
   iconScrollScript.async = false;
