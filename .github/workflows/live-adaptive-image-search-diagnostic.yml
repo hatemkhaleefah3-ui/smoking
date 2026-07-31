@@ -1,0 +1,103 @@
+name: Live adaptive image search diagnostic
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-glycine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Wait for exact commit on production
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          DEPLOYMENT_URL: https://smoking-e1j.pages.dev/api/diagnostics/9c593829f5c04b3e9ffb86724c4c3b75/deployment
+        run: |
+          node --input-type=module <<'NODE'
+          const expected = process.env.EXPECTED_SHA;
+          const url = process.env.DEPLOYMENT_URL;
+          for (let attempt = 1; attempt <= 40; attempt += 1) {
+            try {
+              const response = await fetch(`${url}?attempt=${attempt}&ts=${Date.now()}`, { headers: { 'Cache-Control': 'no-cache' } });
+              const body = await response.json();
+              console.log(`attempt=${attempt} status=${response.status} deployed=${body.deploymentCommitSha || 'missing'} expected=${expected}`);
+              if (response.ok && body.deploymentCommitSha === expected) process.exit(0);
+            } catch (error) {
+              console.log(`attempt=${attempt} error=${error.message}`);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 15000));
+          }
+          process.exit(1);
+          NODE
+
+      - name: Run live glycine ambiguity and provider diagnostics
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { writeFile } from 'node:fs/promises';
+
+          const endpoint = 'https://smoking-e1j.pages.dev/api/image-search';
+          const post = async (body) => {
+            const response = await fetch(`${endpoint}?ts=${Date.now()}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache'
+              },
+              body: JSON.stringify(body)
+            });
+            const text = await response.text();
+            let payload;
+            try { payload = JSON.parse(text); } catch { payload = { parseError: true, rawBody: text }; }
+            return { status: response.status, payload };
+          };
+
+          const ambiguity = await post({ query: 'glycine', debug: true, retry: true });
+          console.log('--- GLYCINE AMBIGUITY RESPONSE START ---');
+          console.log(JSON.stringify(ambiguity, null, 2));
+          console.log('--- GLYCINE AMBIGUITY RESPONSE END ---');
+          assert.equal(ambiguity.status, 200);
+          assert.equal(ambiguity.payload.requiresTopic, true, 'glycine should return topic choices');
+          assert.ok(Array.isArray(ambiguity.payload.topics) && ambiguity.payload.topics.length >= 2);
+          assert.ok(Array.isArray(ambiguity.payload.debugDiagnostics?.wikidata));
+
+          const selectedTopic = ambiguity.payload.topics[0];
+          const providers = await post({
+            query: 'glycine',
+            topic: selectedTopic,
+            debug: true,
+            retry: true,
+            excludeUrls: []
+          });
+          console.log('--- GLYCINE PROVIDER RESPONSE START ---');
+          console.log(JSON.stringify(providers, null, 2));
+          console.log('--- GLYCINE PROVIDER RESPONSE END ---');
+          assert.equal(providers.status, 200);
+          assert.equal(providers.payload.requiresTopic, false);
+          assert.ok(Array.isArray(providers.payload.sourceStatus));
+          for (const source of ['wikimedia', 'openverse', 'nlm-open-i']) {
+            assert.ok(providers.payload.sourceStatus.some((item) => item.source === source), `Missing ${source} status`);
+          }
+          assert.ok(Array.isArray(providers.payload.debugDiagnostics?.providers));
+
+          const output = { ambiguity, providers };
+          await writeFile('live-adaptive-image-search-diagnostic.json', `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+          NODE
+
+      - name: Upload adaptive diagnostic JSON
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-adaptive-image-search-diagnostic
+          path: live-adaptive-image-search-diagnostic.json
+          if-no-files-found: ignore
