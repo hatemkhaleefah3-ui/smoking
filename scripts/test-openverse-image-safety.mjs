@@ -24,7 +24,7 @@ const response = Response.json({
       id: 'openverse:missing',
       source: 'openverse',
       imageUrl: 'https://api.openverse.org/v1/images/missing/thumb/',
-      originalUrl: ''
+      originalUrl: 'https://api.openverse.org/v1/images/missing/thumb/'
     },
     {
       id: 'openverse:http',
