@@ -18,6 +18,16 @@
     heroActions.replaceChildren(knowMore);
   }
 
+  const suggestionLabels = ['Glycine pathway', 'Nephron anatomy', 'Electron transport'];
+  document.querySelectorAll('[data-search-example]').forEach((button, index) => {
+    button.dataset.keepText = 'true';
+    button.replaceChildren(suggestionLabels[index] || 'Search example');
+  });
+
+  document.querySelectorAll('.pdf-number-choice').forEach((button) => {
+    button.dataset.keepText = 'true';
+  });
+
   const preview = document.querySelector('.preview-visual');
   if (preview) preview.setAttribute('aria-label', 'Glycine oxidation pathway diagram');
 })();
