@@ -2,216 +2,177 @@ import assert from 'node:assert/strict';
 import { handleImageSearchRequest } from '../worker/src/image-search.js';
 
 const originalFetch = globalThis.fetch;
-const feedbackRows = [
-  {
-    image_url: 'https://openi.nlm.nih.gov/imgs/glycine-neuro.png',
-    source: 'nlm-open-i',
-    query_term: 'glycine',
-    topic: 'Medical / neurological',
-    rating: 1
-  },
-  {
-    image_url: 'https://images.openverse.org/unrelated-glycine.jpg',
-    source: 'openverse',
-    query_term: 'glycine',
-    topic: 'Medical / neurological',
-    rating: -1
-  }
-];
-const db = createD1(feedbackRows);
+const db = createD1();
 const cache = createR2();
-const env = {
-  DB: db,
-  LECTURES: cache,
-  IMAGE_SEARCH_CACHE_TTL_SECONDS: '604800'
-};
-
-let providerCallCount = 0;
-let wikidataCallCount = 0;
+const env = { DB: db, LECTURES: cache, IMAGE_SEARCH_CACHE_TTL_SECONDS: '604800' };
+let providerCalls = 0;
 
 globalThis.fetch = async (input) => {
   const url = new URL(String(input));
+  if (url.hostname === 'www.wikidata.org') throw new Error('Static Wikidata disambiguation must not run.');
+  providerCalls += 1;
 
-  if (url.hostname === 'www.wikidata.org') {
-    wikidataCallCount += 1;
-    const action = url.searchParams.get('action');
-    if (action === 'wbsearchentities') {
-      return Response.json({
-        search: [
-          { id: 'Q1', label: 'glycine', description: 'amino acid, neurotransmitter and nutrient' }
-        ]
-      });
-    }
-    if (action === 'wbgetentities' && url.searchParams.get('ids') === 'Q1') {
-      return Response.json({
-        entities: {
-          Q1: {
-            id: 'Q1',
-            labels: { en: { value: 'glycine' } },
-            descriptions: { en: { value: 'amino acid, neurotransmitter and nutrient used in metabolism' } },
-            claims: {
-              P31: [
-                { mainsnak: { datavalue: { value: { id: 'Q2' } } } }
-              ]
-            }
-          }
-        }
-      });
-    }
-    if (action === 'wbgetentities' && url.searchParams.get('ids') === 'Q2') {
-      return Response.json({
-        entities: {
-          Q2: {
-            id: 'Q2',
-            labels: { en: { value: 'chemical compound' } },
-            descriptions: { en: { value: 'molecular chemical entity' } }
-          }
-        }
-      });
-    }
-  }
-
-  providerCallCount += 1;
   if (url.hostname === 'commons.wikimedia.org') {
-    return Response.json({
-      query: {
-        pages: [
-          {
-            pageid: 10,
-            title: 'File:Glycine neurotransmission diagram.svg',
-            imageinfo: [
-              {
-                mime: 'image/svg+xml',
-                thumburl: 'https://upload.wikimedia.org/glycine-neuro.png',
-                url: 'https://upload.wikimedia.org/glycine-neuro.svg',
-                descriptionurl: 'https://commons.wikimedia.org/wiki/File:Glycine_neurotransmission_diagram.svg',
-                thumbwidth: 960,
-                thumbheight: 640,
-                extmetadata: {
-                  ImageDescription: { value: 'Glycine neurotransmission pathway' },
-                  Artist: { value: 'Example author' },
-                  LicenseShortName: { value: 'CC BY-SA 4.0' },
-                  LicenseUrl: { value: 'https://creativecommons.org/licenses/by-sa/4.0/' }
-                }
-              }
-            ]
-          }
-        ]
-      }
-    });
+    return Response.json({ query: { pages: [
+      commonsPage(1, 'Heart structure chambers', 'Heart human structure includes chambers and valves.'),
+      commonsPage(2, 'Heart structure ventricles', 'Heart human structure includes atria and ventricles.'),
+      commonsPage(3, 'Heart structure anatomy', 'Heart human structure includes myocardium and septum.')
+    ] } });
   }
 
   if (url.hostname === 'api.openverse.org') {
-    return Response.json({
-      results: [
-        {
-          id: 'ov-1',
-          title: 'Unrelated glycine photograph',
-          thumbnail: 'https://images.openverse.org/unrelated-glycine.jpg',
-          url: 'https://images.openverse.org/unrelated-glycine-full.jpg',
-          foreign_landing_url: 'https://openverse.org/image/ov-1',
-          creator: 'Example creator',
-          license: 'by',
-          license_url: 'https://creativecommons.org/licenses/by/4.0/'
-        }
-      ]
-    });
+    return Response.json({ results: [
+      openverseItem('physiology-1', 'Heart physiology circulation', 'Heart human physiology controls blood circulation.'),
+      openverseItem('physiology-2', 'Heart physiology contraction', 'Heart human physiology describes cardiac contraction.')
+    ] });
   }
 
   if (url.hostname === 'openi.nlm.nih.gov') {
-    return Response.json({
-      list: [
-        {
-          imgId: 'PMC-glycine-1',
-          imgUrl: '/imgs/glycine-neuro.png',
-          title: 'Glycine as an inhibitory neurotransmitter',
-          caption: 'Clinical diagram of glycine signaling in the nervous system.',
-          journal: 'Example medical journal',
-          license: 'CC BY'
-        }
-      ]
-    });
+    return Response.json({ list: [
+      openIItem('valve-1', 'Heart valve disease', 'Heart human valve disease affects blood flow.'),
+      openIItem('valve-2', 'Heart valve anatomy', 'Heart human valve anatomy is described clinically.')
+    ] });
   }
 
   return Response.json({ error: 'Unexpected mock URL' }, { status: 404 });
 };
 
 try {
-  const ambiguousResponse = await handleImageSearchRequest(searchRequest({ query: 'glycine' }), env);
-  assert.equal(ambiguousResponse.status, 200);
-  const ambiguous = await ambiguousResponse.json();
-  assert.equal(ambiguous.requiresTopic, true);
-  assert.ok(ambiguous.topics.length >= 2);
-  assert.ok(ambiguous.topics.some((topic) => topic.id === 'chemical-structure'));
-  assert.ok(ambiguous.topics.some((topic) => topic.id === 'medical-neurological'));
-  assert.ok(ambiguous.topics.some((topic) => topic.id === 'nutrition-metabolism'));
-  assert.equal(providerCallCount, 0, 'Image providers must not run before an ambiguous topic is selected.');
-  assert.ok(wikidataCallCount >= 3);
+  const initialResponse = await handleImageSearchRequest(searchRequest({ query: 'Heart' }), env);
+  assert.equal(initialResponse.status, 200);
+  const initial = await initialResponse.json();
+  assert.equal(initial.requiresTopic, false);
+  assert.equal(initial.requiresKeyword, true);
+  assert.equal(initial.poolResultCount, 7);
+  assert.ok(initial.keywordOptions.length >= 3);
+  assert.ok(initial.keywordOptions.some((item) => item.keyword === 'structur'));
+  assert.ok(initial.keywordOptions.some((item) => item.keyword === 'physiology' || item.keyword === 'physiolog'));
+  assert.ok(initial.keywordOptions.some((item) => item.keyword === 'valve'));
+  assert.ok(!initial.keywordOptions.some((item) => item.keyword === 'human'), 'Generic high-overlap “human” must be removed.');
+  assert.ok(initial.keywordExtraction.genericDropped >= 1);
+  assert.equal(cache.objects.size, 1);
 
-  const selectedTopic = {
-    id: 'medical-neurological',
-    label: 'Medical / neurological',
-    querySuffix: 'medical neurological neurotransmitter'
-  };
-  const firstSearchResponse = await handleImageSearchRequest(searchRequest({
-    query: 'glycine',
-    topic: selectedTopic
-  }), env);
-  assert.equal(firstSearchResponse.status, 200);
-  const firstSearch = await firstSearchResponse.json();
-  assert.equal(firstSearch.requiresTopic, false);
-  assert.equal(firstSearch.cacheHit, false);
-  assert.equal(firstSearch.topic.id, 'medical-neurological');
-  assert.equal(firstSearch.results[0].source, 'nlm-open-i', 'Previously upvoted images should rank first.');
-  assert.ok(firstSearch.results.every((result) => result.imageUrl !== 'https://images.openverse.org/unrelated-glycine.jpg'), 'Previously downvoted images should be filtered.');
-  assert.ok(firstSearch.sourceStatus.some((item) => item.source === 'wikimedia' && item.ok));
-  assert.ok(firstSearch.sourceStatus.some((item) => item.source === 'openverse' && item.ok));
-  assert.ok(firstSearch.sourceStatus.some((item) => item.source === 'nlm-open-i' && item.ok));
-  assert.equal(cache.objects.size, 1, 'Successful metadata should be cached in R2.');
+  const callsAfterInitial = providerCalls;
+  const physiology = initial.keywordOptions.find((item) => item.keyword === 'physiology' || item.keyword === 'physiolog');
+  const physiologyResponse = await handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: physiology }), env);
+  const physiologyPayload = await physiologyResponse.json();
+  assert.equal(physiologyPayload.cacheHit, true);
+  assert.equal(providerCalls, callsAfterInitial, 'Keyword filtering must reuse the broad cached pool.');
+  assert.equal(physiologyPayload.requiresKeyword, false);
+  assert.equal(physiologyPayload.resultCount, 2);
+  assert.equal(physiologyPayload.filter.fallbackUsed, true);
+  assert.equal(physiologyPayload.filter.mode, 'title-caption');
+  assert.ok(physiologyPayload.keywordOptions.some((item) => item.keyword === 'structur'), 'Other overlapping options must remain visible.');
+  assert.ok(physiologyPayload.results.every((item) => /physiology/i.test(`${item.title} ${item.caption}`)));
 
-  const callsAfterFreshSearch = providerCallCount;
-  const cachedSearchResponse = await handleImageSearchRequest(searchRequest({
-    query: 'glycine',
-    topic: selectedTopic
-  }), env);
-  const cachedSearch = await cachedSearchResponse.json();
-  assert.equal(cachedSearch.cacheHit, true);
-  assert.equal(providerCallCount, callsAfterFreshSearch, 'A cache hit should avoid external image-provider calls.');
+  const structure = initial.keywordOptions.find((item) => item.keyword === 'structur');
+  const valve = initial.keywordOptions.find((item) => item.keyword === 'valve');
+  const structureBefore = await jsonOf(handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: structure }), env));
+  assert.equal(structureBefore.resultCount, 3);
+  const liked = structureBefore.results[0];
+  const similarUnrated = structureBefore.results[1];
 
-  const retryResponse = await handleImageSearchRequest(searchRequest({
-    query: 'glycine',
-    topic: selectedTopic,
-    retry: true,
-    excludeUrls: ['https://openi.nlm.nih.gov/imgs/glycine-neuro.png']
-  }), env);
-  const retry = await retryResponse.json();
-  assert.equal(retry.cacheHit, false);
-  assert.ok(retry.results.every((result) => result.imageUrl !== 'https://openi.nlm.nih.gov/imgs/glycine-neuro.png'));
-  assert.ok(providerCallCount > callsAfterFreshSearch, 'Retry should fetch fresh provider results.');
+  for (let index = 0; index < 3; index += 1) {
+    const response = await handleImageSearchRequest(feedbackRequest({
+      imageUrl: liked.imageUrl,
+      source: liked.source,
+      queryTerm: 'Heart',
+      topic: structure.label,
+      topicCluster: structure.keyword,
+      rating: 1,
+      title: liked.title,
+      caption: liked.caption,
+      creator: liked.creator,
+      collection: liked.collection,
+      keywords: liked.significantKeywords
+    }), env);
+    assert.equal(response.status, 201);
+  }
 
-  const feedbackResponse = await handleImageSearchRequest(feedbackRequest({
-    imageUrl: 'https://upload.wikimedia.org/glycine-neuro.png',
-    source: 'wikimedia',
-    queryTerm: 'glycine',
-    topic: 'Medical / neurological',
-    rating: 1
-  }), env);
-  assert.equal(feedbackResponse.status, 201);
-  assert.equal((await feedbackResponse.json()).saved, true);
-  assert.ok(feedbackRows.some((row) => row.image_url === 'https://upload.wikimedia.org/glycine-neuro.png' && row.rating === 1));
+  const valveBefore = await jsonOf(handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: valve }), env));
+  const disliked = valveBefore.results[0];
+  for (let index = 0; index < 5; index += 1) {
+    const response = await handleImageSearchRequest(feedbackRequest({
+      imageUrl: disliked.imageUrl,
+      source: disliked.source,
+      queryTerm: 'Heart',
+      topic: valve.label,
+      topicCluster: valve.keyword,
+      rating: -1,
+      title: disliked.title,
+      caption: disliked.caption,
+      creator: disliked.creator,
+      collection: disliked.collection,
+      keywords: disliked.significantKeywords
+    }), env);
+    assert.equal(response.status, 201);
+  }
 
-  console.log('Adaptive image search ambiguity, ranking, feedback, retry and cache validation passed.');
+  const structureAfter = await jsonOf(handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: structure }), env));
+  assert.equal(structureAfter.results[0].imageUrl, liked.imageUrl, 'Liked image should move toward the top.');
+  const propagated = structureAfter.results.find((item) => item.imageUrl === similarUnrated.imageUrl);
+  assert.ok(propagated);
+  assert.ok(propagated.similarityFeedbackScore > 0, 'A similar unrated image should receive fractional positive propagation.');
+
+  const valveAfter = await jsonOf(handleImageSearchRequest(searchRequest({ query: 'Heart', keyword: valve }), env));
+  assert.ok(valveAfter.results.some((item) => item.imageUrl === disliked.imageUrl), 'Heavily disliked images must remain in the pool.');
+  assert.equal(valveAfter.results.at(-1).imageUrl, disliked.imageUrl, 'Heavily disliked image should be gradually demoted.');
+  assert.equal(valveAfter.feedbackRanking.hardRemovalThreshold, null);
+
+  console.log('Data-driven keyword extraction, overlap handling, progressive fallback, persistent feedback and similarity propagation passed.');
 } finally {
   globalThis.fetch = originalFetch;
+}
+
+function commonsPage(id, title, caption) {
+  return {
+    pageid: id,
+    title: `File:${title}.svg`,
+    imageinfo: [{
+      mime: 'image/svg+xml',
+      thumburl: `https://upload.wikimedia.org/${id}.png`,
+      url: `https://upload.wikimedia.org/${id}.svg`,
+      descriptionurl: `https://commons.wikimedia.org/wiki/File:${id}.svg`,
+      extmetadata: {
+        ImageDescription: { value: caption },
+        Artist: { value: 'Anatomy Lab' },
+        LicenseShortName: { value: 'CC BY-SA 4.0' }
+      }
+    }]
+  };
+}
+
+function openverseItem(id, title, description) {
+  return {
+    id,
+    title,
+    description,
+    url: `https://images.openverse.org/${id}.jpg`,
+    thumbnail: `https://api.openverse.org/v1/images/${id}/thumb/`,
+    foreign_landing_url: `https://openverse.org/image/${id}`,
+    creator: 'Physiology Lab',
+    provider: 'example-collection',
+    license: 'by',
+    license_url: 'https://creativecommons.org/licenses/by/4.0/'
+  };
+}
+
+function openIItem(id, title, caption) {
+  return {
+    uid: id,
+    title,
+    authors: 'Clinical Team',
+    journal_title: 'Heart Journal',
+    image: { id: 'F1', caption },
+    imgLarge: `/imgs/512/${id}.png`,
+    detailedQueryURL: `/search?img=${id}&query=heart&req=4`
+  };
 }
 
 function searchRequest(body) {
   return new Request('https://example.test/api/image-search', {
     method: 'POST',
-    headers: {
-      Origin: 'https://example.test',
-      'Content-Type': 'application/json'
-    },
+    headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
 }
@@ -219,47 +180,59 @@ function searchRequest(body) {
 function feedbackRequest(body) {
   return new Request('https://example.test/api/image-search/feedback', {
     method: 'POST',
-    headers: {
-      Origin: 'https://example.test',
-      'Content-Type': 'application/json'
-    },
+    headers: { Origin: 'https://example.test', 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
 }
 
-function createD1(rows) {
+async function jsonOf(responsePromise) {
+  const response = await responsePromise;
+  assert.equal(response.status, 200);
+  return response.json();
+}
+
+function createD1() {
+  const events = [];
+  const profiles = new Map();
   return {
-    async batch(statements) {
-      return statements.map(() => ({ success: true, results: [] }));
-    },
-    prepare(sql) {
-      return statement(sql, []);
-    }
+    events,
+    profiles,
+    async batch(statements) { return statements.map(() => ({ success: true, results: [] })); },
+    prepare(sql) { return statement(sql, []); }
   };
 
   function statement(sql, values) {
     return {
-      bind(...nextValues) {
-        return statement(sql, nextValues);
-      },
+      bind(...nextValues) { return statement(sql, nextValues); },
       async all() {
-        if (!/SELECT image_url, SUM\(rating\)/.test(sql)) return { results: [] };
-        const [queryTerm, topic] = values;
-        const relevant = rows.filter((row) => {
-          const queryMatches = row.query_term.toLowerCase() === String(queryTerm || '').toLowerCase();
-          const topicMatches = /topic IS NULL/.test(sql)
-            ? row.topic == null
-            : String(row.topic || '').toLowerCase() === String(topic || '').toLowerCase();
-          return queryMatches && topicMatches;
-        });
-        const aggregate = new Map();
-        for (const row of relevant) aggregate.set(row.image_url, Number(aggregate.get(row.image_url) || 0) + Number(row.rating));
-        return { results: [...aggregate].map(([image_url, score]) => ({ image_url, score })) };
+        if (/SELECT score FROM image_feedback_profiles/.test(sql)) {
+          const profile = profiles.get(values[0]);
+          return { results: profile ? [{ score: profile.score }] : [] };
+        }
+        if (/SELECT COALESCE\(SUM\(rating\)/.test(sql)) {
+          const score = events.filter((row) => row.image_url === values[0]).reduce((sum, row) => sum + row.rating, 0);
+          return { results: [{ score }] };
+        }
+        if (/FROM image_feedback_profiles/.test(sql) && /WHERE score != 0/.test(sql)) {
+          return { results: [...profiles.values()].filter((row) => row.score !== 0) };
+        }
+        if (/FROM image_feedback\s+GROUP BY image_url/.test(sql)) {
+          const aggregate = new Map();
+          for (const row of events) aggregate.set(row.image_url, Number(aggregate.get(row.image_url) || 0) + row.rating);
+          return { results: [...aggregate].filter(([, score]) => score !== 0).map(([image_url, score]) => ({ image_url, score })) };
+        }
+        return { results: [] };
       },
       async run() {
-        if (/INSERT INTO image_feedback/.test(sql)) {
+        if (/INSERT INTO image_feedback \(/.test(sql)) {
           const [image_url, source, query_term, topic, rating] = values;
-          rows.push({ image_url, source, query_term, topic, rating });
+          events.push({ image_url, source, query_term, topic, rating: Number(rating) });
+        } else if (/UPDATE image_feedback_profiles/.test(sql)) {
+          const [source, creator, collection_name, title, caption, keywords_json, topic_cluster, score, image_url] = values;
+          profiles.set(image_url, { image_url, source, creator, collection_name, title, caption, keywords_json, topic_cluster, score: Number(score) });
+        } else if (/INSERT INTO image_feedback_profiles/.test(sql)) {
+          const [image_url, source, creator, collection_name, title, caption, keywords_json, topic_cluster, score] = values;
+          profiles.set(image_url, { image_url, source, creator, collection_name, title, caption, keywords_json, topic_cluster, score: Number(score) });
         }
         return { success: true };
       }
@@ -273,15 +246,9 @@ function createR2() {
     objects,
     async get(key) {
       const value = objects.get(key);
-      if (value == null) return null;
-      return { async text() { return value; } };
+      return value == null ? null : { async text() { return value; } };
     },
-    async put(key, body) {
-      objects.set(key, String(body));
-      return { size: String(body).length };
-    },
-    async delete(key) {
-      objects.delete(key);
-    }
+    async put(key, value) { objects.set(key, String(value)); },
+    async delete(key) { objects.delete(key); }
   };
 }
