@@ -18,9 +18,13 @@ export async function applyOpenverseImageSafety(response) {
     if (result?.source !== 'openverse') return [result];
 
     // Before this guard, imageUrl contained Openverse's thumbnail first and
-    // originalUrl contained the provider's primary `url` field.
-    const primaryUrl = normalizeHttpsUrl(result.originalUrl);
-    const thumbnailUrl = normalizeHttpsUrl(result.thumbnailUrl || result.imageUrl);
+    // originalUrl contained the provider's primary `url` field. Older cache
+    // entries can contain the thumbnail in both fields when `url` was missing.
+    const thumbnailCandidate = normalizeHttpsUrl(result.thumbnailUrl || result.imageUrl);
+    const legacyThumbnailOnly = !result.thumbnailUrl
+      && sameUrl(result.originalUrl, result.imageUrl)
+      && isOpenverseThumbnailUrl(result.imageUrl);
+    const primaryUrl = legacyThumbnailOnly ? '' : normalizeHttpsUrl(result.originalUrl);
 
     if (!primaryUrl) {
       skippedInvalidPrimary += 1;
@@ -28,7 +32,9 @@ export async function applyOpenverseImageSafety(response) {
         event: 'openverse_result_skipped',
         id: result.id || null,
         title: result.title || null,
-        reason: classifyInvalidPrimary(result.originalUrl)
+        reason: legacyThumbnailOnly
+          ? 'missing-primary-url-thumbnail-only'
+          : classifyInvalidPrimary(result.originalUrl)
       }));
       return [];
     }
@@ -37,7 +43,7 @@ export async function applyOpenverseImageSafety(response) {
       ...result,
       imageUrl: primaryUrl,
       originalUrl: primaryUrl,
-      thumbnailUrl: thumbnailUrl && thumbnailUrl !== primaryUrl ? thumbnailUrl : null,
+      thumbnailUrl: thumbnailCandidate && thumbnailCandidate !== primaryUrl ? thumbnailCandidate : null,
       openversePrimaryStatus: 'valid-https'
     }];
   });
@@ -71,6 +77,23 @@ function normalizeHttpsUrl(value) {
     return url.protocol === 'https:' ? url.href : '';
   } catch {
     return '';
+  }
+}
+
+function sameUrl(left, right) {
+  const normalizedLeft = normalizeHttpsUrl(left);
+  const normalizedRight = normalizeHttpsUrl(right);
+  return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
+}
+
+function isOpenverseThumbnailUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:'
+      && /(^|\.)api\.openverse\.org$/i.test(url.hostname)
+      && /\/v1\/images\/[^/]+\/thumb\/?$/i.test(url.pathname);
+  } catch {
+    return false;
   }
 }
 
