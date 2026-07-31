@@ -3,4 +3,4 @@ export {
   ensureImageFeedbackSchema,
   imageSearchErrorResponse,
   rankResults
-} from './image-search-resilient.js';
+} from './image-search-topic-normalized.js';
