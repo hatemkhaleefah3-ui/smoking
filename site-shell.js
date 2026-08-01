@@ -216,6 +216,28 @@
   refinementScript.async = false;
   document.head.append(refinementScript);
 
+  // Dynamic Theme Switcher Logic
+  const themeButtons = document.querySelectorAll('.theme-btn');
+  const savedTheme = localStorage.getItem('lecture-studio-theme') || 'light';
+
+  function applyTheme(themeId) {
+    document.body.dataset.theme = themeId;
+    localStorage.setItem('lecture-studio-theme', themeId);
+    themeButtons.forEach((btn) => {
+      const active = btn.dataset.themeId === themeId;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  themeButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      applyTheme(button.dataset.themeId);
+    });
+  });
+
+  applyTheme(savedTheme);
+
   const iconScrollScript = document.createElement('script');
   iconScrollScript.src = 'icon-scroll-system.js';
   iconScrollScript.async = false;

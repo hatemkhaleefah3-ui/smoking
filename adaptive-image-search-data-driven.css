@@ -29,3 +29,71 @@
   font-size: 0.78rem;
   font-weight: 700;
 }
+
+
+/* Part 0: adaptive provider and pipeline diagnostics */
+.adaptive-image-debug-panel {
+  margin-block: 1rem;
+  border: 1px solid var(--border, #d6dbe4);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--surface, #fff) 94%, #eef4ff);
+}
+
+.adaptive-image-debug-panel > summary {
+  cursor: pointer;
+  padding: 0.85rem 1rem;
+  font-weight: 700;
+}
+
+.adaptive-image-debug-content {
+  display: grid;
+  gap: 1rem;
+  padding: 0 1rem 1rem;
+}
+
+.adaptive-debug-section {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border, #d6dbe4);
+  border-radius: 0.7rem;
+  background: var(--surface, #fff);
+}
+
+.adaptive-debug-section.has-count-mismatch {
+  border-color: #b42318;
+}
+
+.adaptive-debug-provider {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, #d6dbe4);
+}
+
+.adaptive-debug-grid {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.45fr) minmax(0, 1fr);
+  gap: 0.35rem 0.8rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.84rem;
+}
+
+.adaptive-debug-grid dt {
+  font-weight: 700;
+}
+
+.adaptive-debug-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 640px) {
+  .adaptive-debug-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .adaptive-debug-grid dd {
+    margin-bottom: 0.45rem;
+  }
+}

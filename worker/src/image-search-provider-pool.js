@@ -1,6 +1,7 @@
 'use strict';
 
 const PROVIDER_RESULT_LIMIT = 24;
+const OPENVERSE_RESULT_LIMIT = 20;
 const USER_AGENT = 'LectureStudioImageSearch/2.0 (https://smoking-e1j.pages.dev; educational image discovery)';
 const WIKIMEDIA_TIMEOUT_MS = 5_000;
 const OPENVERSE_TIMEOUT_MS = 6_000;
@@ -236,7 +237,7 @@ async function attemptWikimedia(query, stage, diagnostics, debug) {
 async function searchOpenverse({ query, diagnostics, debug }) {
   const endpoint = new URL('https://api.openverse.org/v1/images/');
   endpoint.searchParams.set('q', query);
-  endpoint.searchParams.set('page_size', String(PROVIDER_RESULT_LIMIT));
+  endpoint.searchParams.set('page_size', String(OPENVERSE_RESULT_LIMIT));
   endpoint.searchParams.set('mature', 'false');
 
   const { payload, diagnostic } = await fetchJson(endpoint, {

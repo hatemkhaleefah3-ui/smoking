@@ -16,6 +16,7 @@ const DEFAULT_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const CACHE_VERSION = 'v4-data-driven-keywords';
 const SIMILARITY_THRESHOLD = 0.28;
 const SIMILARITY_PROPAGATION = 0.55;
+const DIAGNOSTIC_PIPELINE_VERSION = 'part0-v1';
 
 const schemaPromises = new WeakMap();
 
@@ -54,7 +55,7 @@ async function searchImages(request, env, url) {
 
   let cacheHit = false;
   let poolPayload = null;
-  if (!retry && cacheBucket) {
+  if (!retry && !debug && cacheBucket) {
     poolPayload = await readPoolCache(cacheBucket, cacheKey);
     cacheHit = Boolean(poolPayload);
   }
@@ -74,6 +75,17 @@ async function searchImages(request, env, url) {
   const requiresKeyword = !chosen && keywordOptions.length >= 2;
 
   if (requiresKeyword) {
+    const debugDiagnostics = buildDebugDiagnostics({
+      poolPayload,
+      rawPoolCount: rawPool.length,
+      afterKeywordFilterCount: rawPool.length,
+      afterFeedbackRankingCount: 0,
+      finalCountPassedToRender: 0,
+      selectedKeyword: null,
+      keywordSelectionRequired: true,
+      cacheHit
+    });
+    logPipelineDiagnostics(query, debugDiagnostics);
     return json({
       requiresTopic: false,
       requiresKeyword: true,
@@ -84,7 +96,7 @@ async function searchImages(request, env, url) {
       sourceStatus: poolPayload.sourceStatus || [],
       providerSummary: summarizeProviderState(poolPayload.sourceStatus || []),
       keywordExtraction: extraction.summary,
-      ...(debug ? { debugDiagnostics: { providers: poolPayload.diagnostics || [] } } : {})
+      ...(debug ? { debugDiagnostics } : {})
     });
   }
 
@@ -92,9 +104,22 @@ async function searchImages(request, env, url) {
     ? filterResultPool(annotatedPool, query, chosen)
     : { results: annotatedPool, mode: 'broad-pool', strictCount: annotatedPool.length, fallbackUsed: false };
   const feedbackState = await loadFeedbackState(env.DB);
-  const ranked = rankWithFeedback(filter.results, feedbackState, chosen)
+  const feedbackRanked = rankWithFeedback(filter.results, feedbackState, chosen);
+  const ranked = feedbackRanked
     .slice(0, MAX_VISIBLE_RESULTS)
     .map(stripInternalAnalysis);
+
+  const debugDiagnostics = buildDebugDiagnostics({
+    poolPayload,
+    rawPoolCount: rawPool.length,
+    afterKeywordFilterCount: filter.results.length,
+    afterFeedbackRankingCount: feedbackRanked.length,
+    finalCountPassedToRender: ranked.length,
+    selectedKeyword: chosen,
+    keywordSelectionRequired: false,
+    cacheHit
+  });
+  logPipelineDiagnostics(query, debugDiagnostics);
 
   return json({
     requiresTopic: false,
@@ -123,8 +148,51 @@ async function searchImages(request, env, url) {
       similarityThreshold: SIMILARITY_THRESHOLD,
       propagationFactor: SIMILARITY_PROPAGATION
     },
-    ...(debug ? { debugDiagnostics: { providers: poolPayload.diagnostics || [] } } : {})
+    ...(debug ? { debugDiagnostics } : {})
   });
+}
+
+function buildDebugDiagnostics({
+  poolPayload,
+  rawPoolCount,
+  afterKeywordFilterCount,
+  afterFeedbackRankingCount,
+  finalCountPassedToRender,
+  selectedKeyword,
+  keywordSelectionRequired,
+  cacheHit
+}) {
+  const providerPipeline = poolPayload?.pipelineCounts || {};
+  return {
+    version: DIAGNOSTIC_PIPELINE_VERSION,
+    providers: Array.isArray(poolPayload?.diagnostics) ? poolPayload.diagnostics : [],
+    sourceStatus: Array.isArray(poolPayload?.sourceStatus) ? poolPayload.sourceStatus : [],
+    cache: {
+      hit: Boolean(cacheHit),
+      liveProviderRequests: !cacheHit
+    },
+    pipeline: {
+      rawByProvider: providerPipeline.rawByProvider || {},
+      afterProviderFilteringByProvider: providerPipeline.afterProviderFilteringByProvider || {},
+      beforeCrossProviderDedup: Number(providerPipeline.beforeCrossProviderDedup || rawPoolCount || 0),
+      afterCrossProviderDedup: Number(providerPipeline.afterCrossProviderDedup || rawPoolCount || 0),
+      afterKeywordFiltering: Number(afterKeywordFilterCount || 0),
+      afterFeedbackRankingOrDemotion: Number(afterFeedbackRankingCount || 0),
+      finalCountPassedToRender: Number(finalCountPassedToRender || 0),
+      finalDomRenderedCount: null,
+      keywordSelectionRequired: Boolean(keywordSelectionRequired),
+      selectedKeyword: selectedKeyword?.keyword || null
+    }
+  };
+}
+
+function logPipelineDiagnostics(query, diagnostics) {
+  console.log(JSON.stringify({
+    event: 'adaptive_image_pipeline_counts',
+    query,
+    cache: diagnostics.cache,
+    pipeline: diagnostics.pipeline
+  }));
 }
 
 async function saveFeedback(request, env, url) {
