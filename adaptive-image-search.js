@@ -39,6 +39,10 @@
       <button id="adaptive-image-search-retry" class="button button-secondary" type="button" data-keep-text hidden>Refresh and re-rank</button>
     </div>
     <div id="adaptive-image-source-status" class="adaptive-image-source-status" hidden></div>
+    <details id="adaptive-image-debug-panel" class="adaptive-image-debug-panel" hidden>
+      <summary>Search diagnostics</summary>
+      <div id="adaptive-image-debug-content" class="adaptive-image-debug-content"></div>
+    </details>
     <div id="adaptive-image-results" class="adaptive-image-results" hidden></div>
   `;
   existingSearchForm.insertAdjacentElement('afterend', panel);
@@ -52,6 +56,8 @@
     retry: panel.querySelector('#adaptive-image-search-retry'),
     status: panel.querySelector('#adaptive-image-search-status'),
     sourceStatus: panel.querySelector('#adaptive-image-source-status'),
+    debugPanel: panel.querySelector('#adaptive-image-debug-panel'),
+    debugContent: panel.querySelector('#adaptive-image-debug-content'),
     results: panel.querySelector('#adaptive-image-results')
   };
 
@@ -62,7 +68,9 @@
     results: [],
     voting: new Set(),
     controller: null,
-    requestSequence: 0
+    requestSequence: 0,
+    debugDiagnostics: null,
+    renderCounts: { passed: null, dom: null }
   };
 
   elements.form.addEventListener('submit', (event) => {
@@ -117,12 +125,19 @@
       state.keywordOptions = Array.isArray(payload.keywordOptions) ? payload.keywordOptions : [];
       renderKeywordChoices(state.keywordOptions, payload.keyword || keyword || null);
       renderSourceStatus(payload.sourceStatus || [], payload.cacheHit);
+      state.debugDiagnostics = payload.debugDiagnostics || null;
+      state.renderCounts = {
+        passed: Number(payload.debugDiagnostics?.pipeline?.finalCountPassedToRender ?? payload.resultCount ?? 0),
+        dom: null
+      };
+      renderDebugDiagnostics();
       elements.retry.hidden = false;
 
       if (payload.requiresKeyword === true) {
         state.keyword = null;
         elements.results.replaceChildren();
         elements.results.hidden = true;
+        scheduleRenderedCountMeasurement(0);
         elements.keywordPanel.hidden = false;
         elements.keywordPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         const dropped = Number(payload.keywordExtraction?.genericDropped || 0);
@@ -134,7 +149,7 @@
       state.keyword = payload.keyword || keyword || null;
       state.results = Array.isArray(payload.results) ? payload.results : [];
       renderKeywordChoices(state.keywordOptions, state.keyword);
-      renderResults(state.results);
+      renderResults(state.results, Number(payload.resultCount ?? state.results.length));
 
       const keywordText = state.keyword?.label ? ` for “${state.keyword.label}”` : '';
       const filterText = payload.filter?.fallbackUsed ? ` Progressive fallback used: ${formatFilterMode(payload.filter.mode)}.` : '';
@@ -213,9 +228,18 @@
       if (item.ok) {
         chip.className = 'is-ready';
         chip.textContent = `${sourceLabel(item.source)} · ${Number(item.count || 0)}`;
-      } else if (item.timedOut) {
-        chip.className = 'is-unavailable is-soft-skip';
+      } else if (item.failureType === 'network') {
+        chip.className = 'is-unavailable is-soft-skip is-network-error';
+        chip.textContent = `${sourceLabel(item.source)} · no response (network/CORS error)`;
+      } else if (item.failureType === 'timeout' || item.timedOut) {
+        chip.className = 'is-unavailable is-soft-skip is-timeout-error';
         chip.textContent = item.message || `${sourceLabel(item.source)} timed out · other sources shown`;
+      } else if (item.failureType === 'http') {
+        chip.className = 'is-unavailable is-soft-skip is-server-error';
+        chip.textContent = `${sourceLabel(item.source)} · server returned${item.status == null ? " an error" : ` HTTP ${item.status}`}`;
+      } else if (item.failureType === 'parse') {
+        chip.className = 'is-unavailable is-soft-skip is-parse-error';
+        chip.textContent = `${sourceLabel(item.source)} · unreadable response`;
       } else if (item.skipped) {
         chip.className = 'is-unavailable is-soft-skip';
         chip.textContent = item.message || `${sourceLabel(item.source)} skipped · other sources shown`;
@@ -229,10 +253,105 @@
     elements.sourceStatus.hidden = !elements.sourceStatus.childElementCount;
   }
 
-  function renderResults(results) {
+  function renderResults(results, passedCount = results.length) {
     elements.results.replaceChildren();
     for (const result of results) elements.results.append(createResultCard(result));
     elements.results.hidden = !elements.results.childElementCount;
+    scheduleRenderedCountMeasurement(passedCount);
+  }
+
+  function scheduleRenderedCountMeasurement(passedCount) {
+    state.renderCounts.passed = Number(passedCount || 0);
+    const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 0));
+    schedule(() => schedule(() => {
+      const domCount = elements.results.querySelectorAll('.adaptive-image-card').length;
+      state.renderCounts.dom = domCount;
+      if (state.debugDiagnostics?.pipeline) {
+        state.debugDiagnostics.pipeline.finalCountPassedToRender = state.renderCounts.passed;
+        state.debugDiagnostics.pipeline.finalDomRenderedCount = domCount;
+      }
+      console.info('[adaptive-image-search] render count diagnostic', {
+        passedToRender: state.renderCounts.passed,
+        renderedInDom: domCount,
+        matches: state.renderCounts.passed === domCount
+      });
+      renderDebugDiagnostics();
+    }));
+  }
+
+  function renderDebugDiagnostics() {
+    if (!DEBUG_MODE || !elements.debugPanel || !elements.debugContent) return;
+    elements.debugPanel.hidden = false;
+    elements.debugContent.replaceChildren();
+
+    const diagnostics = state.debugDiagnostics || {};
+    const pipeline = diagnostics.pipeline || {};
+    const providers = Array.isArray(diagnostics.providers) ? diagnostics.providers : [];
+
+    const pipelineSection = document.createElement('section');
+    pipelineSection.className = 'adaptive-debug-section';
+    const pipelineTitle = document.createElement('h4');
+    pipelineTitle.textContent = 'Pipeline stage counts';
+    pipelineSection.append(pipelineTitle);
+    const pipelineList = document.createElement('dl');
+    pipelineList.className = 'adaptive-debug-grid';
+    appendDiagnosticRow(pipelineList, 'Raw by provider', JSON.stringify(pipeline.rawByProvider || {}));
+    appendDiagnosticRow(pipelineList, 'After provider filtering', JSON.stringify(pipeline.afterProviderFilteringByProvider || {}));
+    appendDiagnosticRow(pipelineList, 'Before cross-provider dedup', pipeline.beforeCrossProviderDedup);
+    appendDiagnosticRow(pipelineList, 'After cross-provider dedup', pipeline.afterCrossProviderDedup);
+    appendDiagnosticRow(pipelineList, 'After keyword/topic filtering', pipeline.afterKeywordFiltering);
+    appendDiagnosticRow(pipelineList, 'After feedback ranking/demotion', pipeline.afterFeedbackRankingOrDemotion);
+    appendDiagnosticRow(pipelineList, 'Passed to render', state.renderCounts.passed ?? pipeline.finalCountPassedToRender);
+    appendDiagnosticRow(pipelineList, 'Actually rendered in DOM', state.renderCounts.dom ?? pipeline.finalDomRenderedCount);
+    const mismatch = state.renderCounts.passed != null && state.renderCounts.dom != null && state.renderCounts.passed !== state.renderCounts.dom;
+    appendDiagnosticRow(pipelineList, 'Render count match', mismatch ? 'MISMATCH' : state.renderCounts.dom == null ? 'Pending measurement' : 'Match');
+    pipelineSection.classList.toggle('has-count-mismatch', mismatch);
+    pipelineSection.append(pipelineList);
+    elements.debugContent.append(pipelineSection);
+
+    const providerSection = document.createElement('section');
+    providerSection.className = 'adaptive-debug-section';
+    const providerTitle = document.createElement('h4');
+    providerTitle.textContent = 'Provider request / response diagnostics';
+    providerSection.append(providerTitle);
+
+    if (!providers.length) {
+      const empty = document.createElement('p');
+      empty.textContent = diagnostics.cache?.hit
+        ? 'This response came from cache and contains no live provider attempt details.'
+        : 'No provider attempt diagnostics were returned.';
+      providerSection.append(empty);
+    }
+
+    for (const attempt of providers) {
+      const card = document.createElement('article');
+      card.className = 'adaptive-debug-provider';
+      const heading = document.createElement('h5');
+      heading.textContent = `${sourceLabel(attempt.source)} · ${attempt.stage || "request"}`;
+      card.append(heading);
+      const list = document.createElement('dl');
+      list.className = 'adaptive-debug-grid';
+      appendDiagnosticRow(list, 'Request URL', attempt.requestUrl || '—');
+      appendDiagnosticRow(list, 'Fetch threw', String(Boolean(attempt.fetchThrew)));
+      appendDiagnosticRow(list, 'Fetch JS error', [attempt.fetchErrorName, attempt.fetchErrorMessage].filter(Boolean).join(': ') || '—');
+      appendDiagnosticRow(list, 'Failure type', attempt.failureType || 'none');
+      appendDiagnosticRow(list, 'HTTP status', attempt.responseStatus ?? attempt.status ?? 'no response');
+      appendDiagnosticRow(list, 'response.ok', attempt.responseOk ?? attempt.ok ?? 'no response');
+      appendDiagnosticRow(list, 'Raw parsed result count', attempt.parsedResultCount ?? 'not parsed');
+      appendDiagnosticRow(list, 'After provider filtering', attempt.afterProviderFilterCount ?? 'not available');
+      appendDiagnosticRow(list, 'Response body preview', attempt.rawBodyPreview || '—');
+      card.append(list);
+      providerSection.append(card);
+    }
+    elements.debugContent.append(providerSection);
+  }
+
+  function appendDiagnosticRow(list, label, value) {
+    const term = document.createElement('dt');
+    term.textContent = label;
+    const description = document.createElement('dd');
+    description.textContent = value == null ? '—' : String(value);
+    list.append(term, description);
   }
 
   function createResultCard(result) {
